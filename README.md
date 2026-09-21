@@ -1,34 +1,44 @@
-# Flow AutoPrompt & Batch Downloader (Chrome Extension)
+# AMJAD'S FLOW EXTENSION (Chrome Extension Manifest V3)
 
-Google Flow (`flow.google`) ke liye automated bulk prompt submission aur image downloading Chrome Extension (Manifest V3).
+Google Flow (`flow.google.com`) ke liye powerful automated bulk prompt submission, smart scene detection, timestamps script synchronization, character consistency anchor, aur automatic image downloader extension.
 
 ---
 
 ## 🌟 Key Features
 
-1. **Bulk Prompt Support (100 to 1,000+ Prompts):**
-   - ChatGPT se nikali hui saari prompts ek hi baar mein paste karein.
-   - Line-by-line (`A cinematic shot...`) aur Numbered format (`1. A cinematic shot...`, `2) ...`) dono ko automatically clean aur parse karta hai.
+1. **⏱️ Timestamps Script Synchronization & Renaming (NEW):**
+   - Poori video script timestamps ke sath paste karein (e.g. `00 to 05 sec: [sentence]` ya `00:00 - 00:05`).
+   - Extension automatically timestamps aur image generation prompts ko 1-to-1 sync karti hai.
+   - Download hone wali images ke naam mein sentence ka timestamp auto-attach ho jata hai:
+     - `Scene_0001_[00-05sec]_img1.png`
+     - `Scene_0001_[00-05sec]_img2.png` waghera.
 
-2. **Background & Tab Switching Support (Bina Ruke Chalta Hai):**
-   - **Chrome Side Panel API:** Yeh popup ki tarah click karne par gayab nahi hota, browser ke side mein persistent rehta hai.
-   - **Service Worker Downloads:** File downloads background `service-worker` ke zariye hote hain. Agar aap Chrome minimize kar dein ya doosre tab mein kaam karein, tab bhi downloads nahi rukte.
+2. **🧠 Smart Scene Detection (Headings Filter):**
+   - Script ki headings (jaise `scene 1 :`, `IMAGE 2:`, `PROMPT 3`, `Shot #01 -`) ko automatically filter karta hai aur sirf actual image prompts run hoti hain.
 
-3. **Character Consistency (Consistency Lock):**
-   - **Base Character Anchor:** Extension mein character ka description likhein (e.g., outfit, facial details, age, lighting). Yeh text har scene prompt ke sath automatically attach ho jata hai (Prefix ya Suffix).
-   - **Reference Image Card:** Extension ke andar character ki primary reference image upload karein. Is se aapka visual anchor hamesha samne rahega aur single-click mein clipboard par copy karke Flow mein use ho sakega.
+3. **📦 Bulk Prompt Automation (100 to 1,000+ Prompts):**
+   - ChatGPT ya Claude se generate ki hui saari prompts ek hi baar mein paste karein.
+   - Live clean preview dikhata hai aur sequential 1-by-1 execution guarantee karta hai.
 
-4. **Organized Downloads:**
-   - Default folder: `Downloads/Flow_Batch/`
-   - Naming convention: `Scene_0001_img1.png`, `Scene_0001_img2.png` wagaira. Koi bhi scene ya image mix nahi hoti.
+4. **🔄 Intelligent Failure & Recovery Watchdog:**
+   - Generation fail hone par turant repeat nahi karta; pehle proper jaiza leta hai ke saari 4 images fail hui hain ya nahi.
+   - Agar 4 mein se 1 ya 2 images bhi successfully generate ho jati hain to unko completely visible hone par download karta hai aur agle prompt par smoothly advance karta hai.
 
-5. **In-Page Floating HUD (Head-Up Display):**
-   - Flow page ke top-right par ek sleek widget show hota hai jo real-time progress (Scene 14/100, 56 images downloaded) aur status batata hai.
-   - **Emergency Calibrate Tool:** Agar Google Flow ka design ya buttons kabhi update hon, toh on-screen click karke prompt box aur generate button ko calibrate kiya ja sakta hai.
+5. **🔊 Completion Tone & Notifications:**
+   - Saare prompts aur images download complete hone par desktop notification aur pleasant completion chime tone play hoti hai.
+
+6. **⚡ Non-Stop Background Execution:**
+   - Chrome browser ko minimize karne ya doosre apps chalane par bhi background audio keepalive aur native IPC loop ke zariye process freeze ya stop nahi hota.
+
+7. **🎭 Character Consistency Lock:**
+   - Base character anchor description aur character sheet reference image upload support.
+
+8. **✨ Reset All (Fresh Start):**
+   - Ek click mein saari prompts, character settings, logs aur queue ko 0 karke bilkul fresh state par le aata hai.
 
 ---
 
-## 🚀 Installation Guide (Kaise Install Karein)
+## 🚀 Installation Guide
 
 1. Chrome Browser open karein aur address bar mein type karein:
    ```
@@ -44,15 +54,11 @@ Google Flow (`flow.google`) ke liye automated bulk prompt submission aur image d
 
 ---
 
-## 📖 How To Use (Kaise Use Karein)
+## 📖 How To Use
 
-1. Apne browser mein Google Flow open karein:
-   ```
-   https://flow.google
-   ```
-2. Extension icon par click karein ya Side Panel open karein.
-3. **Tab 1 (Prompts):** Apni 100 se 1000 prompts ek sath paste karein.
-4. **Tab 2 (Character):** Character ka details description daalein aur reference image upload karein.
-5. **Tab 4 (Settings):** Download folder ka naam (e.g. `Flow_Batch`) aur delay set karein.
-6. **"Start Batch Run"** button par click karein!
-7. Ab aap chahe koi doosra tab open karein ya Chrome ko minimize kar dein — extension background mein ek-ek prompt send karegi, images generate hone par unko download karegi, aur complete hone tak chalti rahegi!
+1. Google Flow open karein: `https://flow.google.com`.
+2. Extension icon par click karke **Side Panel** open karein.
+3. **TIMESTAMPS Tab:** Script timestamps ke sath paste karein (optional).
+4. **PROMPTS Tab:** Apni image prompts paste karein.
+5. **CHARACTER Tab:** Character description aur reference sheet upload karein.
+6. **HOME Tab:** **Run Batch** par click karein aur extension ko apna kaam karne dein!

@@ -578,6 +578,7 @@ textarea:focus, input:focus, select:focus {
 }
 
 .btn-reset {
+  grid-column: span 2;
   background-color: #334155;
   color: #e2e8f0;
   border: 1px solid rgba(255, 255, 255, 0.15);

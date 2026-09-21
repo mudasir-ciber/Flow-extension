@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnPauseResume = document.getElementById('btn-pause-resume');
   const pauseBtnLabel = document.getElementById('pause-btn-label');
   const btnCancelBatch = document.getElementById('btn-cancel-batch');
+  const btnOpenHud = document.getElementById('btn-open-hud');
   const btnResetAll = document.getElementById('btn-reset-all');
   const logTerminal = document.getElementById('log-terminal');
   const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -423,11 +424,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tsClean = ts ? ts.clean : null;
 
         let previewFilename = '';
-        const style = settingFilenameStyle ? settingFilenameStyle.value : 'prefix_scene_ts';
+        const style = settingFilenameStyle ? settingFilenameStyle.value : 'ts_only';
         if (tsClean) {
-          if (style === 'ts_first') previewFilename = `[${tsClean}]_Scene_${sceneNum}_img{1..4}.png`;
-          else if (style === 'ts_only') previewFilename = `${tsClean}_img{1..4}.png`;
-          else previewFilename = `Scene_${sceneNum}_[${tsClean}]_img{1..4}.png`;
+          if (style === 'prefix_scene_ts') previewFilename = `Scene_${sceneNum}_( ${tsClean} )_img{1..4}.png`;
+          else if (style === 'ts_first') previewFilename = `( ${tsClean} )_Scene_${sceneNum}_img{1..4}.png`;
+          else previewFilename = `( ${tsClean} )_img{1..4}.png`;
         } else {
           previewFilename = `Scene_${sceneNum}_img{1..4}.png`;
         }
@@ -620,14 +621,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       delaySeconds: parseInt(settingDelay.value, 10) || 10,
       expectedImages: parseInt(settingExpectedImages.value, 10) || 4,
       maxTimeoutSeconds: parseInt(settingTimeout.value, 10) || 120,
-      filenameStyle: settingFilenameStyle ? settingFilenameStyle.value : 'prefix_scene_ts'
+      filenameStyle: settingFilenameStyle ? settingFilenameStyle.value : 'ts_only'
     });
     const orig = btnSaveSettings.textContent;
     btnSaveSettings.textContent = '✅ Settings Saved!';
     setTimeout(() => btnSaveSettings.textContent = orig, 1500);
   });
 
-  // --- HOME BATCH CONTROLS: RUN, PAUSE, CANCEL, RESET ---
+  // --- HOME BATCH CONTROLS: RUN, PAUSE, CANCEL, HUD, RESET ---
   btnRunBatch.addEventListener('click', async () => {
     const rawPrompts = parsePrompts(bulkPromptsInput.value);
     if (rawPrompts.length === 0) {
@@ -707,7 +708,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       delaySeconds: parseInt(settingDelay.value, 10) || 5,
       expectedImages: parseInt(settingExpectedImages.value, 10) || 4,
       maxTimeoutSeconds: parseInt(settingTimeout.value, 10) || 120,
-      filenameStyle: settingFilenameStyle ? settingFilenameStyle.value : 'prefix_scene_ts'
+      filenameStyle: settingFilenameStyle ? settingFilenameStyle.value : 'ts_only'
     });
 
     if (startRes && startRes.error) {
@@ -729,6 +730,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendRuntimeMessage({ action: 'STOP_BATCH' });
     }
   });
+
+  if (btnOpenHud) {
+    btnOpenHud.addEventListener('click', () => {
+      sendRuntimeMessage({ action: 'OPEN_HUD_WINDOW' });
+    });
+  }
 
   // COMPLETE RESET (All Clear Fresh)
   btnResetAll.addEventListener('click', async () => {
@@ -874,8 +881,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     timestampsScriptInput.value = initialState.savedTimestampsScript;
   }
 
-  if (initialState.filenameStyle && settingFilenameStyle) {
-    settingFilenameStyle.value = initialState.filenameStyle;
+  if (settingFilenameStyle) {
+    settingFilenameStyle.value = initialState.filenameStyle || 'ts_only';
   }
 
   updateTimestampsSync();

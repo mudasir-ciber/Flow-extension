@@ -599,6 +599,19 @@
           const totalResolved = currentNewImages.length + errorTiles.length;
           const imagesFullyLoaded = areImagesFullyRendered(currentNewImages);
 
+          // Broadcast live generation telemetry to standalone HUD window & Side Panel
+          safeSend({
+            action: 'GENERATION_TICK',
+            data: {
+              promptIndex: promptIndex,
+              timestamp: timestamp,
+              elapsedSec: elapsedSec,
+              expectedImages: expectedImages,
+              imagesCount: currentNewImages.length,
+              isGenerating: isStillGenerating
+            }
+          });
+
           // Track image count stability
           if (currentNewImages.length > 0) {
             if (currentNewImages.length === lastFoundImages.length) {

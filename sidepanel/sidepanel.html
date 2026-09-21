@@ -83,7 +83,7 @@
           <span>Strict Mode: Ek time mein sirf 1 prompt chalega, jab tak images create hokar 4 download na hon, tab tak agla prompt load nahi hoga.</span>
         </div>
 
-        <!-- Home Controls: Run, Pause, Cancel, Reset -->
+        <!-- Home Controls: Run, Pause, Cancel, HUD, Reset -->
         <div class="control-buttons-grid">
           <button class="btn btn-primary" id="btn-run-batch">
             <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -96,6 +96,10 @@
           <button class="btn btn-danger" id="btn-cancel-batch" disabled>
             <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
             Cancel
+          </button>
+          <button class="btn btn-secondary" id="btn-open-hud" title="Open Floating Desktop HUD Window">
+            <svg viewBox="0 0 24 24"><path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V8h14v10z"/></svg>
+            Desktop HUD
           </button>
           <button class="btn btn-reset" id="btn-reset-all" title="Clear everything and start fresh">
             <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
@@ -299,11 +303,11 @@
         <div class="form-group">
           <label for="setting-filename-style">Timestamp Filename Format:</label>
           <select id="setting-filename-style">
-            <option value="prefix_scene_ts" selected>Scene_0001_[00-05sec]_img1.png (Recommended)</option>
-            <option value="ts_first">[00-05sec]_Scene_0001_img1.png</option>
-            <option value="ts_only">00-05sec_img1.png</option>
+            <option value="ts_only" selected>( 00 To 05 )_img1.png (Pure Timestamp - User Format)</option>
+            <option value="prefix_scene_ts">Scene_0001_( 00 To 05 )_img1.png</option>
+            <option value="ts_first">( 00 To 05 )_Scene_0001_img1.png</option>
           </select>
-          <span class="small-hint">Script timestamps hone par images is format mein rename hongi.</span>
+          <span class="small-hint">Script timestamps hone par images strictly is format mein rename hongi.</span>
         </div>
 
         <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>

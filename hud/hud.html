@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AMJAD'S FLOW EXTENSION • Live Generation HUD</title>
+  <link rel="stylesheet" href="hud.css">
+  <link rel="icon" type="image/png" href="../icons/icon-48.png">
+</head>
+<body class="theme-dark">
+  <div class="hud-window-container" id="hud-window">
+    <!-- Windows-style Title Bar -->
+    <header class="hud-titlebar" id="hud-titlebar">
+      <div class="hud-title-left">
+        <img src="../icons/logo.png" alt="Logo" class="hud-logo" id="hud-logo">
+        <span class="hud-title-text">AMJAD'S FLOW EXTENSION • Live Generation HUD</span>
+        <span class="hud-status-badge" id="hud-status-badge">IDLE</span>
+      </div>
+      <div class="hud-title-controls">
+        <button class="win-btn" id="win-btn-min" title="Minimize to Taskbar">
+          <svg viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg>
+        </button>
+        <button class="win-btn" id="win-btn-max" title="Maximize / Restore">
+          <svg viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+        <button class="win-btn win-btn-close" id="win-btn-close" title="Close HUD">
+          <svg viewBox="0 0 12 12"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Active Stage -->
+    <main class="hud-main-content">
+      <!-- Active Generating Sentence Stage with Red Perimeter Progress Fill -->
+      <section class="active-sentence-section">
+        <div class="active-sentence-card-wrapper" id="active-card-wrapper">
+          <!-- SVG Perimeter Progress Border (Glowing Red Fill around Sentence) -->
+          <svg class="perimeter-progress-svg" id="perimeter-progress-svg">
+            <rect class="perimeter-bg-rect" id="perimeter-bg-rect" rx="14" ry="14" />
+            <rect class="perimeter-fill-rect" id="perimeter-fill-rect" rx="14" ry="14" />
+          </svg>
+
+          <!-- Sentence Inner Content -->
+          <div class="active-sentence-card" id="active-sentence-card">
+            <div class="card-top-row">
+              <div class="active-ts-badge" id="active-ts-badge">
+                ⏱️ <span id="active-ts-text">( 00 To 05 )</span>
+              </div>
+              <div class="active-scene-index" id="active-scene-index">
+                Scene #1 of 1
+              </div>
+              <div class="live-pulse-indicator" id="live-pulse-indicator">
+                <span class="pulse-dot"></span>
+                <span class="pulse-label" id="pulse-label">Ready</span>
+              </div>
+            </div>
+
+            <!-- Current Script Sentence -->
+            <div class="sentence-text-area" id="sentence-text-area">
+              <p class="sentence-main-text" id="active-sentence-content">
+                No generation running. Start a batch from the Side Panel!
+              </p>
+            </div>
+
+            <!-- Live Generation Telemetry & Images Status -->
+            <div class="card-bottom-row">
+              <div class="progress-details">
+                <span class="detail-label">Generation Progress:</span>
+                <span class="detail-val" id="hud-progress-percent">0%</span>
+                <span class="detail-sep">•</span>
+                <span class="detail-label">Images:</span>
+                <span class="detail-val" id="hud-images-count">0 / 4 visible</span>
+                <span class="detail-sep">•</span>
+                <span class="detail-label">Elapsed:</span>
+                <span class="detail-val" id="hud-elapsed-time">0s</span>
+              </div>
+              <div class="target-rename-preview" id="hud-target-rename">
+                📁 Rename: <code id="hud-rename-code">( 00 To 05 )_img{1..4}.png</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Horizontal (Left-to-Right) Timeline Strip -->
+      <section class="timeline-section">
+        <div class="timeline-header">
+          <span class="timeline-title">📜 Script Timeline & Timestamps (Left to Right Scroll)</span>
+          <span class="timeline-hint">Scroll horizontally ➔ to view all sentences</span>
+        </div>
+        <div class="timeline-scroll-container" id="timeline-scroll-container">
+          <div class="timeline-track" id="timeline-track">
+            <!-- Dynamically populated sentence cards -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Status Bar -->
+    <footer class="hud-statusbar">
+      <div class="statusbar-left">
+        <span class="status-indicator-dot"></span>
+        <span id="hud-status-message">Connected to Google Flow engine.</span>
+      </div>
+      <div class="statusbar-right">
+        <span>Total Downloaded: <strong id="hud-total-downloaded">0</strong> images</span>
+        <span class="status-divider">|</span>
+        <span>Batch: <strong id="hud-batch-progress">0/0</strong></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="hud.js"></script>
+</body>
+</html>

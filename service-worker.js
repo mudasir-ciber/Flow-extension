@@ -43,7 +43,7 @@ if (chrome.runtime && chrome.runtime.onInstalled) {
       delaySeconds: current.delaySeconds || 5,
       expectedImages: current.expectedImages || 4,
       maxTimeoutSeconds: current.maxTimeoutSeconds || 120,
-      filenameStyle: current.filenameStyle || 'prefix_scene_ts',
+      filenameStyle: current.filenameStyle || 'ts_only',
       stats: current.stats || { totalPrompts: 0, completedPrompts: 0, downloadedImages: 0 },
       logs: current.logs || [{ timestamp: new Date().toLocaleTimeString(), text: 'Flow Batch Automation Engine Ready.' }]
     });
@@ -239,15 +239,27 @@ function sanitizePath(str) {
   return (str || 'Flow_Batch').replace(/[<>:"/\\|?*]+/g, '_').trim();
 }
 
+function sanitizeTimestampForFilename(raw) {
+  if (!raw) return '';
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/^[\[\(\{\s]+|[\]\)\}\s]+$/g, '');
+  cleaned = cleaned.replace(/:/g, '.');
+  cleaned = cleaned.replace(/[\\/*?"<>|]+/g, '_');
+  cleaned = cleaned.replace(/\s*(?:sec|seconds|s)\b/gi, '');
+  cleaned = cleaned.replace(/\s*(?:-->)\s*/gi, ' - ');
+  cleaned = cleaned.replace(/\bto\b/gi, 'To');
+  return cleaned.trim();
+}
+
 // --- IMAGE DOWNLOADER VIA CHROME DOWNLOADS API (WAITS FOR DISK COMPLETION) ---
 
 async function downloadImages(imageUrls, promptIndex, customFolder, timestamp) {
-  const { subfolder = 'Flow_Batch', filenameStyle = 'prefix_scene_ts' } = await chrome.storage.local.get(['subfolder', 'filenameStyle']);
+  const { subfolder = 'Flow_Batch', filenameStyle = 'ts_only' } = await chrome.storage.local.get(['subfolder', 'filenameStyle']);
   const targetFolder = sanitizePath(customFolder || subfolder);
   const promptNumberStr = String(promptIndex + 1).padStart(4, '0');
-  const cleanTs = timestamp ? sanitizePath(timestamp).replace(/[^\w\.\-]/g, '') : '';
+  const cleanTs = timestamp ? sanitizeTimestampForFilename(timestamp) : '';
 
-  await addLog(`⬇️ Scene #${promptIndex + 1}${cleanTs ? ` [${cleanTs}]` : ''}: Initiating download for ${imageUrls.length} image(s)...`);
+  await addLog(`⬇️ Scene #${promptIndex + 1}${cleanTs ? ` ( ${cleanTs} )` : ''}: Initiating download for ${imageUrls.length} image(s)...`);
 
   const downloadPromises = imageUrls.map((url, idx) => {
     return new Promise((resolve) => {
@@ -257,13 +269,13 @@ async function downloadImages(imageUrls, promptIndex, customFolder, timestamp) {
 
       let baseName = '';
       if (cleanTs) {
-        if (filenameStyle === 'ts_first') {
-          baseName = `[${cleanTs}]_Scene_${promptNumberStr}_img${idx + 1}`;
-        } else if (filenameStyle === 'ts_only') {
-          baseName = `${cleanTs}_img${idx + 1}`;
+        if (filenameStyle === 'prefix_scene_ts') {
+          baseName = `Scene_${promptNumberStr}_( ${cleanTs} )_img${idx + 1}`;
+        } else if (filenameStyle === 'ts_first') {
+          baseName = `( ${cleanTs} )_Scene_${promptNumberStr}_img${idx + 1}`;
         } else {
-          // default: prefix_scene_ts
-          baseName = `Scene_${promptNumberStr}_[${cleanTs}]_img${idx + 1}`;
+          // Default: ts_only -> e.g. "( 00 To 05 )_img1"
+          baseName = `( ${cleanTs} )_img${idx + 1}`;
         }
       } else {
         baseName = `Scene_${promptNumberStr}_img${idx + 1}`;
@@ -448,6 +460,41 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
   });
 }
 
+// --- STANDALONE DESKTOP HUD WINDOW (SEPARATE TASKBAR ENTRY) ---
+let hudWindowId = null;
+
+async function openOrFocusHudWindow() {
+  try {
+    if (hudWindowId) {
+      const existing = await chrome.windows.get(hudWindowId).catch(() => null);
+      if (existing) {
+        await chrome.windows.update(hudWindowId, { focused: true });
+        return existing;
+      }
+    }
+    const newWin = await chrome.windows.create({
+      url: 'hud/hud.html',
+      type: 'popup',
+      width: 820,
+      height: 520,
+      focused: true
+    });
+    hudWindowId = newWin.id;
+    return newWin;
+  } catch (err) {
+    console.warn('[Flow SW] openOrFocusHudWindow error:', err);
+    return null;
+  }
+}
+
+if (chrome.windows && chrome.windows.onRemoved) {
+  chrome.windows.onRemoved.addListener((windowId) => {
+    if (windowId === hudWindowId) {
+      hudWindowId = null;
+    }
+  });
+}
+
 // --- RUNTIME MESSAGE DISPATCHER ---
 
 const SUPPORTED_ACTIONS = [
@@ -458,7 +505,9 @@ const SUPPORTED_ACTIONS = [
   'STOP_BATCH',
   'DOWNLOAD_IMAGES',
   'PROMPT_COMPLETED',
-  'PROMPT_ERROR'
+  'PROMPT_ERROR',
+  'OPEN_HUD_WINDOW',
+  'GENERATION_TICK'
 ];
 
 if (chrome.runtime && chrome.runtime.onMessage) {
@@ -476,8 +525,23 @@ if (chrome.runtime && chrome.runtime.onMessage) {
           break;
         }
 
+        case 'OPEN_HUD_WINDOW': {
+          const win = await openOrFocusHudWindow();
+          sendResponse({ success: !!win });
+          break;
+        }
+
+        case 'GENERATION_TICK': {
+          safeSendRuntimeMessage({ action: 'GENERATION_TICK', data: message.data });
+          sendResponse({ success: true });
+          break;
+        }
+
         case 'START_BATCH': {
           const { queue, characterAnchor, anchorPosition, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds, filenameStyle } = message;
+
+          // Automatically launch standalone HUD window on Windows Taskbar
+          openOrFocusHudWindow();
 
           await chrome.storage.local.set({
             queue: queue || [],
@@ -489,7 +553,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
             delaySeconds: delaySeconds || 5,
             expectedImages: expectedImages || 4,
             maxTimeoutSeconds: maxTimeoutSeconds || 120,
-            filenameStyle: filenameStyle || 'prefix_scene_ts',
+            filenameStyle: filenameStyle || 'ts_only',
             stats: {
               totalPrompts: queue?.length || 0,
               completedPrompts: 0,

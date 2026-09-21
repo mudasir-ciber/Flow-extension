@@ -460,8 +460,33 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
   });
 }
 
-// --- STANDALONE DESKTOP HUD WINDOW (SEPARATE TASKBAR ENTRY) ---
+// --- STANDALONE DESKTOP HUD & FLOATING PANEL WINDOWS ---
 let hudWindowId = null;
+let panelWindowId = null;
+
+async function openOrFocusPanelWindow() {
+  try {
+    if (panelWindowId) {
+      const existing = await chrome.windows.get(panelWindowId).catch(() => null);
+      if (existing) {
+        await chrome.windows.update(panelWindowId, { focused: true });
+        return existing;
+      }
+    }
+    const newWin = await chrome.windows.create({
+      url: 'sidepanel/sidepanel.html?mode=window',
+      type: 'popup',
+      width: 480,
+      height: 780,
+      focused: true
+    });
+    panelWindowId = newWin.id;
+    return newWin;
+  } catch (err) {
+    console.warn('[Flow SW] openOrFocusPanelWindow error:', err);
+    return null;
+  }
+}
 
 async function openOrFocusHudWindow() {
   try {
@@ -492,6 +517,9 @@ if (chrome.windows && chrome.windows.onRemoved) {
     if (windowId === hudWindowId) {
       hudWindowId = null;
     }
+    if (windowId === panelWindowId) {
+      panelWindowId = null;
+    }
   });
 }
 
@@ -507,6 +535,7 @@ const SUPPORTED_ACTIONS = [
   'PROMPT_COMPLETED',
   'PROMPT_ERROR',
   'OPEN_HUD_WINDOW',
+  'OPEN_PANEL_WINDOW',
   'GENERATION_TICK'
 ];
 
@@ -531,6 +560,12 @@ if (chrome.runtime && chrome.runtime.onMessage) {
           break;
         }
 
+        case 'OPEN_PANEL_WINDOW': {
+          const win = await openOrFocusPanelWindow();
+          sendResponse({ success: !!win });
+          break;
+        }
+
         case 'GENERATION_TICK': {
           safeSendRuntimeMessage({ action: 'GENERATION_TICK', data: message.data });
           sendResponse({ success: true });
@@ -539,9 +574,6 @@ if (chrome.runtime && chrome.runtime.onMessage) {
 
         case 'START_BATCH': {
           const { queue, characterAnchor, anchorPosition, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds, filenameStyle } = message;
-
-          // Automatically launch standalone HUD window on Windows Taskbar
-          openOrFocusHudWindow();
 
           await chrome.storage.local.set({
             queue: queue || [],

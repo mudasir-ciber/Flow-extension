@@ -18,7 +18,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Elements: Tabs
+  // Window Mode Detection & OS Controls
+  const isWindowMode = window.location.search.includes('mode=window');
+  if (isWindowMode) {
+    document.body.classList.add('is-window-mode');
+  }
+
+  const btnPopoutWindow = document.getElementById('btn-popout-window');
+  const btnPopoutPanel = document.getElementById('btn-popout-panel');
+  const windowOsControls = document.getElementById('window-os-controls');
+  const winBtnMin = document.getElementById('win-btn-min');
+  const winBtnMax = document.getElementById('win-btn-max');
+  const winBtnClose = document.getElementById('win-btn-close');
+
+  // Elements: Tabs & Horizontal Scroller
+  const navTabs = document.getElementById('nav-tabs');
+  const btnTabScrollLeft = document.getElementById('btn-tab-scroll-left');
+  const btnTabScrollRight = document.getElementById('btn-tab-scroll-right');
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
 
@@ -29,13 +45,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statCurrentScene = document.getElementById('stat-current-scene');
   const statDownloadedCount = document.getElementById('stat-downloaded-count');
   const statPercentage = document.getElementById('stat-percentage');
+  const activeSentenceCard = document.getElementById('active-sentence-card');
+  const sentencePerimeterSvg = document.getElementById('sentence-perimeter-svg');
+  const sentencePerimeterRect = document.getElementById('sentence-perimeter-rect');
+  const monitorActiveTs = document.getElementById('monitor-active-ts');
+  const sentencePercentPill = document.getElementById('sentence-percent-pill');
+  const monitorActiveSentenceText = document.getElementById('monitor-active-sentence-text');
   const monitorActivePromptText = document.getElementById('monitor-active-prompt-text');
   const btnRunBatch = document.getElementById('btn-run-batch');
   const runBtnLabel = document.getElementById('run-btn-label');
   const btnPauseResume = document.getElementById('btn-pause-resume');
   const pauseBtnLabel = document.getElementById('pause-btn-label');
   const btnCancelBatch = document.getElementById('btn-cancel-batch');
-  const btnOpenHud = document.getElementById('btn-open-hud');
   const btnResetAll = document.getElementById('btn-reset-all');
   const logTerminal = document.getElementById('log-terminal');
   const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -83,7 +104,66 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingFilenameStyle = document.getElementById('setting-filename-style');
   const btnSaveSettings = document.getElementById('btn-save-settings');
 
-  // --- TAB NAVIGATION ---
+  // --- WINDOW MODE CONTROLS & FLOATING POPOUT ---
+  function openFloatingPanelWindow() {
+    sendRuntimeMessage({ action: 'OPEN_PANEL_WINDOW' });
+  }
+
+  if (btnPopoutWindow) btnPopoutWindow.addEventListener('click', openFloatingPanelWindow);
+  if (btnPopoutPanel) btnPopoutPanel.addEventListener('click', openFloatingPanelWindow);
+
+  if (winBtnMin) {
+    winBtnMin.addEventListener('click', () => {
+      if (chrome.windows && chrome.windows.getCurrent) {
+        chrome.windows.getCurrent((win) => {
+          if (win) chrome.windows.update(win.id, { state: 'minimized' });
+        });
+      }
+    });
+  }
+
+  if (winBtnMax) {
+    winBtnMax.addEventListener('click', () => {
+      if (chrome.windows && chrome.windows.getCurrent) {
+        chrome.windows.getCurrent((win) => {
+          if (win) {
+            chrome.windows.update(win.id, {
+              state: win.state === 'maximized' ? 'normal' : 'maximized'
+            });
+          }
+        });
+      }
+    });
+  }
+
+  if (winBtnClose) {
+    winBtnClose.addEventListener('click', () => {
+      window.close();
+    });
+  }
+
+  // --- TAB NAVIGATION WITH HORIZONTAL SCROLLER ---
+  if (btnTabScrollLeft && navTabs) {
+    btnTabScrollLeft.addEventListener('click', () => {
+      navTabs.scrollBy({ left: -130, behavior: 'smooth' });
+    });
+  }
+
+  if (btnTabScrollRight && navTabs) {
+    btnTabScrollRight.addEventListener('click', () => {
+      navTabs.scrollBy({ left: 130, behavior: 'smooth' });
+    });
+  }
+
+  if (navTabs) {
+    navTabs.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        navTabs.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
+  }
+
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetId = btn.getAttribute('data-tab');
@@ -92,7 +172,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   function switchTab(targetId) {
-    tabBtns.forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === targetId));
+    tabBtns.forEach(b => {
+      const isActive = b.getAttribute('data-tab') === targetId;
+      b.classList.toggle('active', isActive);
+      if (isActive) {
+        b.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+      }
+    });
     tabContents.forEach(c => c.classList.toggle('active', c.id === targetId));
   }
 
@@ -105,6 +191,41 @@ document.addEventListener('DOMContentLoaded', async () => {
       switchTab('tab-home');
     });
   }
+
+  // --- DYNAMIC PERIMETER RED PROGRESS LINE AROUND SENTENCE ---
+  let sentencePerimeterLength = 1000;
+
+  function updateSentencePerimeterDimensions() {
+    if (!activeSentenceCard || !sentencePerimeterRect) return;
+    const rect = activeSentenceCard.getBoundingClientRect();
+    const w = Math.max(0, rect.width - 4);
+    const h = Math.max(0, rect.height - 4);
+    sentencePerimeterRect.setAttribute('x', '2');
+    sentencePerimeterRect.setAttribute('y', '2');
+    sentencePerimeterRect.setAttribute('width', String(w));
+    sentencePerimeterRect.setAttribute('height', String(h));
+    sentencePerimeterLength = 2 * (w + h);
+    sentencePerimeterRect.style.strokeDasharray = String(sentencePerimeterLength);
+  }
+
+  function setSentenceRedProgress(percent) {
+    if (!sentencePerimeterRect) return;
+    const clamped = Math.max(0, Math.min(100, percent));
+    const offset = sentencePerimeterLength * (1 - clamped / 100);
+    sentencePerimeterRect.style.strokeDashoffset = String(offset);
+
+    if (sentencePercentPill) {
+      if (clamped > 0) {
+        sentencePercentPill.style.display = 'inline-block';
+        sentencePercentPill.textContent = `${Math.round(clamped)}%`;
+      } else {
+        sentencePercentPill.style.display = 'none';
+      }
+    }
+  }
+
+  window.addEventListener('resize', updateSentencePerimeterDimensions);
+  setTimeout(updateSentencePerimeterDimensions, 250);
 
   // --- INTELLIGENT PROMPT PARSER (SMART HEADING & SCENE SEGMENTATION) ---
   const KEYWORD_PATTERN = '(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)';
@@ -305,6 +426,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     cleaned = cleaned.replace(/\s+/g, '');
     cleaned = cleaned.replace(/[^a-zA-Z0-9\.\-]/g, '');
     return cleaned;
+  }
+
+  function sanitizeTimestampForFilename(raw) {
+    if (!raw) return '';
+    let cleaned = raw.trim();
+    cleaned = cleaned.replace(/^[\[\(\{\s]+|[\]\)\}\s]+$/g, '');
+    cleaned = cleaned.replace(/:/g, '.');
+    cleaned = cleaned.replace(/[\\/*?"<>|]+/g, '_');
+    cleaned = cleaned.replace(/\s*(?:sec|seconds|s)\b/gi, '');
+    cleaned = cleaned.replace(/\s*(?:-->)\s*/gi, ' - ');
+    cleaned = cleaned.replace(/\bto\b/gi, 'To');
+    return cleaned.trim();
   }
 
   function parseTimestampsScript(rawText) {
@@ -820,16 +953,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     statPercentage.textContent = `${percent}%`;
     monitorProgressFill.style.width = `${percent}%`;
 
-    // Active Prompt Box
+    // Active Sentence Card & Prompt Box
+    updateSentencePerimeterDimensions();
+
     if (status === 'running' || status === 'paused') {
       if (queue[currentIndex]) {
-        const tsLabel = queue[currentIndex].timestamp ? ` | ⏱️ ${queue[currentIndex].timestamp}` : '';
-        monitorActivePromptText.textContent = `[Scene #${currentIndex + 1} of ${total}${tsLabel}]: ${queue[currentIndex].prompt}`;
+        const item = queue[currentIndex];
+        const rawTs = item.timestamp || item.rawTimestamp || '';
+        const cleanTs = rawTs ? sanitizeTimestampForFilename(rawTs) : '';
+
+        if (monitorActiveTs) {
+          if (cleanTs) {
+            monitorActiveTs.textContent = `( ${cleanTs} )`;
+            monitorActiveTs.style.display = 'inline-block';
+          } else {
+            monitorActiveTs.style.display = 'none';
+          }
+        }
+
+        if (monitorActiveSentenceText) {
+          if (item.scriptSentence) {
+            monitorActiveSentenceText.textContent = `"${item.scriptSentence}"`;
+            monitorActiveSentenceText.style.display = 'block';
+          } else {
+            monitorActiveSentenceText.style.display = 'none';
+          }
+        }
+
+        monitorActivePromptText.textContent = `[Scene #${currentIndex + 1} of ${total}]: ${item.prompt}`;
       }
     } else if (status === 'completed') {
+      if (monitorActiveTs) monitorActiveTs.style.display = 'none';
+      if (monitorActiveSentenceText) monitorActiveSentenceText.style.display = 'none';
       monitorActivePromptText.textContent = '🎉 All prompts completed and downloaded successfully!';
+      setSentenceRedProgress(100);
     } else {
+      if (monitorActiveTs) monitorActiveTs.style.display = 'none';
+      if (monitorActiveSentenceText) monitorActiveSentenceText.style.display = 'none';
       monitorActivePromptText.textContent = 'No prompt is currently running.';
+      setSentenceRedProgress(0);
     }
   }
 
@@ -1024,6 +1186,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         appendLogEntry(message.log);
       } else if (message && message.action === 'QUEUE_FINISHED') {
         playCompletionTone();
+        setSentenceRedProgress(100);
+      } else if (message && message.action === 'GENERATION_TICK' && message.data) {
+        const { elapsedSec = 0, expectedImages = 4, imagesCount = 0, isGenerating } = message.data;
+        if (isGenerating) {
+          let calcPercent = 0;
+          if (imagesCount >= expectedImages) {
+            calcPercent = 100;
+          } else {
+            const imageFraction = (imagesCount / expectedImages) * 75;
+            const timeFraction = Math.min(25, (elapsedSec / 25) * 25);
+            calcPercent = Math.min(95, imageFraction + timeFraction);
+          }
+          setSentenceRedProgress(calcPercent);
+        }
       }
       return false;
     });

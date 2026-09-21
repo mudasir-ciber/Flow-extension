@@ -95,9 +95,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 10px 14px;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+
+body.is-window-mode .app-header {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+body.is-window-mode .app-header:active {
+  cursor: grabbing;
+}
+
+body.is-window-mode .app-header button,
+body.is-window-mode .app-header .status-pill {
+  -webkit-app-region: no-drag;
 }
 
 .brand {
@@ -131,6 +146,80 @@ body {
   letter-spacing: 0.5px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-btn:hover {
+  background: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.header-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+body.is-window-mode .header-btn#btn-popout-window {
+  display: none !important;
+}
+
+/* Windows OS Controls */
+.window-os-controls {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+body.is-window-mode .window-os-controls {
+  display: flex;
+}
+
+.win-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.win-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.win-btn.win-close:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+
 .status-pill {
   font-size: 10px;
   font-weight: 700;
@@ -159,30 +248,91 @@ body {
   border: 1px solid var(--accent-color);
 }
 
-/* Navigation Tabs: HOME, PROMPTS, CHARACTER, SETTINGS */
-.nav-tabs {
+/* Navigation Tabs: HOME, PROMPTS, TIMESTAMPS, CHARACTER, SETTINGS with Left-to-Right Scroller */
+.nav-tabs-wrapper {
+  position: relative;
   display: flex;
+  align-items: center;
   background-color: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  padding: 6px 8px 0;
+  border-bottom: 2px solid var(--border-color);
+  padding: 4px 6px 2px;
   gap: 4px;
 }
 
+.tab-scroll-arrow {
+  width: 22px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+  transition: all 0.15s ease;
+  z-index: 2;
+}
+
+.tab-scroll-arrow:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  gap: 6px;
+  padding: 4px 2px 6px;
+  width: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-color) rgba(255, 255, 255, 0.05);
+}
+
+/* Styled horizontal scrollbar exactly where the user marked with the red line! */
+.nav-tabs::-webkit-scrollbar {
+  height: 5px;
+}
+
+.nav-tabs::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.nav-tabs::-webkit-scrollbar-thumb {
+  background: var(--accent-color);
+  border-radius: 4px;
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.nav-tabs::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-hover);
+}
+
 .tab-btn {
-  flex: 1;
+  flex: 0 0 auto; /* PREVENTS SHRINKING SO SETTINGS IS NEVER HIDDEN */
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   color: var(--text-secondary);
-  padding: 8px 2px;
+  padding: 7px 11px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.3px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -190,17 +340,20 @@ body {
   width: 14px;
   height: 14px;
   fill: currentColor;
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {
+  background: var(--bg-tertiary);
   color: var(--text-primary);
+  border-color: var(--accent-color);
 }
 
 .tab-btn.active {
-  color: var(--accent-color);
-  border-bottom-color: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
   background-color: var(--accent-glow);
-  border-radius: 6px 6px 0 0;
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 /* Tab Contents */
@@ -468,26 +621,104 @@ textarea:focus, input:focus, select:focus {
   color: var(--text-primary);
 }
 
-.active-prompt-box {
+/* Active Sentence Card with Dynamic Glowing Red Perimeter Progress Line */
+.active-sentence-card {
+  position: relative;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow: hidden;
+  margin-top: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease;
 }
 
-.active-prompt-box .sub-label {
+.sentence-perimeter-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#sentence-perimeter-rect {
+  fill: none;
+  stroke: #ff3344;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 8px rgba(255, 51, 68, 0.85));
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.sentence-card-body {
+  position: relative;
+  z-index: 3;
+}
+
+.sentence-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sentence-card-tag {
   font-size: 10px;
+  font-weight: 800;
   color: var(--text-muted);
-  display: block;
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.active-prompt-box p {
+.sentence-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sentence-ts-pill {
   font-size: 11px;
+  font-weight: 800;
+  color: #ff4757;
+  background: rgba(255, 71, 87, 0.15);
+  border: 1px solid rgba(255, 71, 87, 0.45);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: monospace;
+}
+
+.sentence-percent-pill {
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  background: #ff3344;
+  padding: 2px 7px;
+  border-radius: 10px;
+  box-shadow: 0 0 6px rgba(255, 51, 68, 0.6);
+}
+
+.sentence-script-text {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-primary);
-  max-height: 48px;
-  overflow-y: auto;
   line-height: 1.4;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid #ff3344;
+  border-radius: 0 4px 4px 0;
+}
+
+.active-prompt-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  max-height: 52px;
+  overflow-y: auto;
 }
 
 /* Control Buttons Grid in HOME */

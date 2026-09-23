@@ -17,7 +17,9 @@
     "https://flow.google.com/*",
     "https://*.flow.google.com/*",
     "https://labs.google/*",
-    "https://*.labs.google/*"
+    "https://*.labs.google/*",
+    "https://labs.google.com/*",
+    "https://*.labs.google.com/*"
   ],
   "background": {
     "service_worker": "service-worker.js"
@@ -35,7 +37,9 @@
         "https://flow.google.com/*",
         "https://*.flow.google.com/*",
         "https://labs.google/*",
-        "https://*.labs.google/*"
+        "https://*.labs.google/*",
+        "https://labs.google.com/*",
+        "https://*.labs.google.com/*"
       ],
       "js": ["inject-main.js"],
       "world": "MAIN",
@@ -47,7 +51,9 @@
         "https://flow.google.com/*",
         "https://*.flow.google.com/*",
         "https://labs.google/*",
-        "https://*.labs.google/*"
+        "https://*.labs.google/*",
+        "https://labs.google.com/*",
+        "https://*.labs.google.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

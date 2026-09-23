@@ -784,7 +784,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let flowTab = null;
     try {
       const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      if (tabs && tabs[0] && (tabs[0].url || '').includes('flow.google')) {
+      if (tabs && tabs[0] && /flow\.google|labs\.google/i.test(tabs[0].url || '')) {
         flowTab = tabs[0];
       }
     } catch (e) {}

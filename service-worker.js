@@ -171,24 +171,21 @@ async function addLog(message) {
 
 // --- HELPER: FIND GOOGLE FLOW TAB ---
 
+function isFlowUrl(url) {
+  if (!url) return false;
+  return /flow\.google|labs\.google/i.test(url);
+}
+
 async function findFlowTab() {
   try {
     // Prioritize active tab in the current focused window
     const [currentActive] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (currentActive && currentActive.url && (
-      currentActive.url.includes('flow.google') ||
-      currentActive.url.includes('labs.google/flow') ||
-      currentActive.url.includes('labs.google/fx/tools/flow')
-    )) {
+    if (currentActive && isFlowUrl(currentActive.url)) {
       return currentActive;
     }
 
     const allTabs = await chrome.tabs.query({});
-    const flowTabs = allTabs.filter(t => t.url && (
-      t.url.includes('flow.google') ||
-      t.url.includes('labs.google/flow') ||
-      t.url.includes('labs.google/fx/tools/flow')
-    ));
+    const flowTabs = allTabs.filter(t => isFlowUrl(t.url));
     if (!flowTabs || flowTabs.length === 0) return null;
     const activeFlow = flowTabs.find(t => t.active);
     return activeFlow || flowTabs[0];

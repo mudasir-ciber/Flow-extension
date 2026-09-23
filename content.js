@@ -2,7 +2,6 @@
 // Strictly executes 1 prompt at a time, tracks live generation, downloads 4 images, auto-retries on failure.
 
 (function () {
-  if (window.__FLOW_AUTOPROMPT_INJECTED) return;
   window.__FLOW_AUTOPROMPT_INJECTED = true;
 
   console.log('[Flow AutoPrompt] Content script active on:', window.location.href);
@@ -59,41 +58,6 @@
 
   function isVisible(el) {
     return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
-  }
-
-  function querySelectorDeep(selector, root = document) {
-    try {
-      const el = root.querySelector(selector);
-      if (el) return el;
-    } catch(e) {}
-
-    try {
-      const all = root.querySelectorAll('*');
-      for (const item of all) {
-        if (item.shadowRoot) {
-          const found = querySelectorDeep(selector, item.shadowRoot);
-          if (found) return found;
-        }
-      }
-    } catch(e) {}
-    return null;
-  }
-
-  function querySelectorAllDeep(selector, root = document) {
-    let results = [];
-    try {
-      results = results.concat(Array.from(root.querySelectorAll(selector)));
-    } catch(e) {}
-
-    try {
-      const all = root.querySelectorAll('*');
-      for (const item of all) {
-        if (item.shadowRoot) {
-          results = results.concat(querySelectorAllDeep(selector, item.shadowRoot));
-        }
-      }
-    } catch(e) {}
-    return results;
   }
 
   let isTrackingActive = false;
@@ -234,95 +198,70 @@
 // --- ELEMENT DETECTION ---
 
   function findPromptInput() {
-    // 1. Custom calibrated selector
-    if (customSelectors.input) {
-      const el = querySelectorDeep(customSelectors.input);
-      if (el && isVisible(el)) return el;
-    }
-
-    // 2. Google Flow textarea prompt box (Current UI: textarea with placeholder "What do you want to create?")
-    const promptTextareas = querySelectorAllDeep('textarea');
-    if (promptTextareas.length > 0) {
-      const targeted = promptTextareas.find(t => {
-        if (!isVisible(t)) return false;
-        const ph = (t.placeholder || '').toLowerCase();
-        const aria = (t.getAttribute('aria-label') || '').toLowerCase();
-        return ph.includes('what do you want to create') ||
-               ph.includes('create') ||
-               ph.includes('prompt') ||
-               ph.includes('imagine') ||
-               ph.includes('describe') ||
-               aria.includes('prompt') ||
-               aria.includes('create');
-      });
-      if (targeted) return targeted;
-
-      // Any visible textarea inside a flow prompt box component
-      const flowBoxTextarea = querySelectorDeep('flow-base-prompt-box textarea, flow-prompt-box textarea, [class*="prompt-box"] textarea');
-      if (flowBoxTextarea && isVisible(flowBoxTextarea)) return flowBoxTextarea;
-
-      // Fallback to first visible textarea
-      const firstVisible = promptTextareas.find(t => isVisible(t));
-      if (firstVisible) return firstVisible;
-    }
-
-    // 3. Google Flow ProseMirror rich text editor
-    const flowProse = querySelectorDeep(
+    // 1. Exact Google Flow ProseMirror editor (Original working implementation)
+    const flowProse = document.querySelector(
       'flow-rich-text-editor .ProseMirror[contenteditable="true"], flow-base-prompt-box .ProseMirror[contenteditable="true"], .prompt-box-container .ProseMirror, .ProseMirror[contenteditable="true"]'
     );
-    if (flowProse && isVisible(flowProse)) return flowProse;
+    if (flowProse) return flowProse;
 
-    // 4. Any contenteditable or textbox role
-    const editables = querySelectorAllDeep('div[contenteditable="true"], [role="textbox"]');
-    const visibleEditable = editables.find(e => isVisible(e));
-    if (visibleEditable) return visibleEditable;
+    // 2. Custom calibrated selector
+    if (customSelectors.input) {
+      const el = document.querySelector(customSelectors.input);
+      if (el) return el;
+    }
 
-    // 5. Fallback: text inputs
-    const inputs = querySelectorAllDeep('input[type="text"], input:not([type])');
-    const visibleInput = inputs.find(i => isVisible(i) && /prompt|create|imagine/i.test(i.placeholder || ''));
-    if (visibleInput) return visibleInput;
+    // 3. Fallback: look for textarea
+    const textareas = Array.from(document.querySelectorAll('textarea'));
+    if (textareas.length > 0) {
+      const matched = textareas.find(t =>
+        /prompt|describe|imagine|create|type/i.test(t.placeholder || '') ||
+        /prompt/i.test(t.getAttribute('aria-label') || '')
+      );
+      return matched || textareas[0];
+    }
+
+    // 4. Fallback: look for any contenteditable div
+    const editables = Array.from(document.querySelectorAll('div[contenteditable="true"], [role="textbox"]'));
+    if (editables.length > 0) {
+      return editables[0];
+    }
 
     return null;
   }
 
   function findGenerateButton(inputEl) {
-    // 1. Custom calibrated selector
-    if (customSelectors.button) {
-      const el = querySelectorDeep(customSelectors.button);
-      if (el && isVisible(el)) return el;
-    }
-
-    // 2. Exact Google Flow Generate button components
-    const flowBtn = querySelectorDeep(
-      'flow-generate-icon-button button.generate-icon-button, flow-generate-icon-button button, button[aria-label*="Start generation" i], button.generate-icon-button'
+    // 1. Exact Google Flow Generate button
+    const flowBtn = document.querySelector(
+      'flow-generate-icon-button button.generate-icon-button, flow-generate-icon-button button, button[aria-label="Start generation"], button[aria-label*="Start generation" i], button.generate-icon-button'
     );
-    if (flowBtn && isVisible(flowBtn)) return flowBtn;
+    if (flowBtn) return flowBtn;
+
+    // 2. Custom calibrated selector
+    if (customSelectors.button) {
+      const el = document.querySelector(customSelectors.button);
+      if (el) return el;
+    }
 
     // 3. Search buttons inside prompt box container
     if (inputEl) {
-      const container = inputEl.closest('flow-base-prompt-box, flow-prompt-box, .prompt-box-container, [class*="prompt-box"], form') || inputEl.parentElement?.parentElement?.parentElement;
+      const container = inputEl.closest('flow-base-prompt-box') || inputEl.closest('.prompt-box-container') || inputEl.parentElement?.parentElement || inputEl.parentElement;
       if (container) {
+        const btn = container.querySelector('flow-generate-icon-button button, button[aria-label="Start generation"], button[aria-label*="Start generation" i], button[type="submit"]');
+        if (btn) return btn;
+
         const containerButtons = Array.from(container.querySelectorAll('button, div[role="button"]'));
         const matched = containerButtons.find(b => {
-          if (!isVisible(b)) return false;
           const label = (b.getAttribute('aria-label') || '').toLowerCase();
           const title = (b.getAttribute('title') || '').toLowerCase();
-          return /start generation|generate|create|run|submit|send|arrow/i.test(label) ||
-                 /generate|create|run|submit|send/i.test(title) ||
-                 b.querySelector('svg, mat-icon');
+          return /start generation|generate|create|run|submit|send|arrow/i.test(label) || /generate|create|run|submit|send/i.test(title);
         });
         if (matched) return matched;
-
-        // If there are buttons in container, pick the rightmost visible one (send button standard)
-        const visibleBtns = containerButtons.filter(b => isVisible(b));
-        if (visibleBtns.length > 0) return visibleBtns[visibleBtns.length - 1];
       }
     }
 
-    // 4. Search globally by aria-label / title
-    const buttons = querySelectorAllDeep('button, div[role="button"]');
+    // 4. Search by aria-label / title
+    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
     const ariaMatch = buttons.find(b => {
-      if (!isVisible(b)) return false;
       const label = (b.getAttribute('aria-label') || '').toLowerCase();
       const title = (b.getAttribute('title') || '').toLowerCase();
       return /start generation|generate|create|run|submit|send|arrow_forward/i.test(label) || /generate|create|run|submit|send/i.test(title);
@@ -336,184 +275,133 @@
 
   function activatePromptBox() {
     try {
-      const container = querySelectorDeep('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box, .prompt-box-content, [class*="prompt-box"]');
+      const container = document.querySelector('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box, .prompt-box-content');
       if (container) {
         container.click();
-      }
-      const el = querySelectorDeep('textarea, [contenteditable="true"]');
-      if (el) {
-        el.focus();
-        try { el.click(); } catch(e) {}
       }
     } catch(e) {}
   }
 
-  async function injectTextIntoElement(el, text) {
+  async function injectTextIntoProseMirror(el, text) {
     if (!el) return false;
     el.focus();
-    try { el.click(); } catch(e) {}
-    await sleep(60);
+    el.click();
+    await sleep(80);
 
-    const isInputOrTextarea = el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT';
-
-    if (isInputOrTextarea) {
-      // 1. Prototype setter for React/Angular/Vue
+    // If textarea
+    if (el instanceof HTMLTextAreaElement || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
       try {
         const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
         const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (nativeSetter) {
-          nativeSetter.call(el, text);
-        } else {
-          el.value = text;
-        }
-      } catch (e) {
+        if (nativeSetter) nativeSetter.call(el, text);
+        else el.value = text;
+      } catch(e) {
         el.value = text;
       }
-
-      // 2. Select & execCommand insertText
-      try {
-        el.focus();
-        el.select();
-        document.execCommand('selectAll', false, null);
-        document.execCommand('insertText', false, text);
-      } catch (e) {}
-
-      // Double check value
-      if (el.value !== text) {
-        el.value = text;
-      }
-
-      // 3. Dispatch full event suite for Angular / Lit / React change detection
-      try {
-        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-      } catch(e) {}
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }));
-
-      await sleep(150);
-      return el.value.length > 0;
-    } else {
-      // ContentEditable / ProseMirror editor
-      try {
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      } catch (e) {}
-
-      try {
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-      } catch (e) {}
-      await sleep(50);
-
-      // DataTransfer paste event
-      try {
-        const dt = new DataTransfer();
-        dt.setData('text/plain', text);
-        const pasteEvt = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt
-        });
-        el.dispatchEvent(pasteEvt);
-      } catch (e) {}
-
-      // execCommand insertText
-      try {
-        document.execCommand('insertText', false, text);
-      } catch (e) {}
-
-      // InputEvent
-      try {
-        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-        el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-      } catch (e) {}
-
-      // Fallback: append paragraph if still empty
-      if (!el.textContent.includes(text.slice(0, 10))) {
-        let p = el.querySelector('p');
-        if (!p) {
-          p = document.createElement('p');
-          el.appendChild(p);
-        }
-        p.textContent = text;
-      }
-
-      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
-
-      await sleep(150);
-      return (el.textContent || '').trim().length > 0;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
     }
+
+    // 1. Clear previous text cleanly using Selection + execCommand (Original working implementation)
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) {}
+
+    try {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+    } catch (e) {}
+    await sleep(50);
+
+    // 2. Insert text via DataTransfer paste event (ProseMirror's official clipboard handler)
+    try {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt
+      });
+      el.dispatchEvent(pasteEvt);
+    } catch (e) {}
+
+    // 3. Insert text via execCommand insertText
+    try {
+      document.execCommand('insertText', false, text);
+    } catch (e) {}
+
+    // 4. Dispatch beforeinput & input events
+    try {
+      el.dispatchEvent(new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: text
+      }));
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: text
+      }));
+    } catch (e) {}
+
+    // 5. Fallback verification: if still empty, insert paragraph
+    if (!el.textContent.includes(text.slice(0, 10))) {
+      let p = el.querySelector('p');
+      if (!p) {
+        p = document.createElement('p');
+        el.appendChild(p);
+      }
+      p.textContent = text;
+    }
+
+    // 6. Dispatch Angular change detection events
+    el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+
+    await sleep(150);
+    return (el.textContent || '').trim().length > 0;
   }
 
-  // Backward compatible alias
-  const injectTextIntoProseMirror = injectTextIntoElement;
+  const injectTextIntoElement = injectTextIntoProseMirror;
 
-  // Trigger Generation: Click Generate button with complete event sequence + Enter fallback
-  async function triggerGenerate(btn, inputEl) {
+  // Trigger Generation: Strictly ONE single trigger (Button click, or Enter fallback)
+  function triggerGenerate(btn, inputEl) {
     if (hasSubmittedPrompt) {
       console.log('[Flow AutoPrompt] Already submitted this prompt, skipping duplicate trigger.');
       return;
     }
     hasSubmittedPrompt = true;
 
-    let clicked = false;
+    // Primary: Click Generate Button ONCE
     if (btn) {
-      try {
-        btn.removeAttribute('disabled');
-        btn.disabled = false;
-        btn.classList.remove('mat-mdc-button-disabled', 'disabled');
-        btn.removeAttribute('aria-disabled');
-        btn.focus();
-
-        const opts = { bubbles: true, cancelable: true, view: window };
-        btn.dispatchEvent(new PointerEvent('pointerdown', opts));
-        btn.dispatchEvent(new MouseEvent('mousedown', opts));
-        btn.dispatchEvent(new PointerEvent('pointerup', opts));
-        btn.dispatchEvent(new MouseEvent('mouseup', opts));
-        btn.click();
-        clicked = true;
-      } catch (e) {
-        console.warn('[Flow AutoPrompt] Button click error:', e);
-      }
+      btn.removeAttribute('disabled');
+      btn.disabled = false;
+      btn.classList.remove('mat-mdc-button-disabled');
+      btn.removeAttribute('aria-disabled');
+      btn.focus();
+      btn.click();
+      return;
     }
 
-    // Short pause to verify if generation triggered
-    await sleep(200);
-
-    // If input still holds text or button was not found, dispatch Enter key on input
-    const stillHasValue = inputEl && (
-      (inputEl.value && inputEl.value.trim().length > 0) ||
-      (inputEl.textContent && inputEl.textContent.trim().length > 0)
-    );
-
-    if (!clicked || stillHasValue) {
-      if (inputEl) {
-        try {
-          inputEl.focus();
-          const enterOpts = {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-            view: window
-          };
-          inputEl.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
-          inputEl.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
-          inputEl.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
-        } catch (e) {
-          console.warn('[Flow AutoPrompt] Enter key dispatch error:', e);
-        }
-      }
+    // Fallback ONLY if button was not found: Dispatch Enter key ONCE
+    if (inputEl) {
+      inputEl.focus();
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      }));
     }
   }
 
@@ -697,8 +585,8 @@
       let btn = findGenerateButton(inputEl);
 
       // 5. Trigger generation ONCE (Native click + Enter fallback)
-      await triggerGenerate(btn, inputEl);
-      await addLogSW(`${sceneHeader} Generate triggered. Monitoring generation progress...`);
+      triggerGenerate(btn, inputEl);
+      await addLogSW(`${sceneHeader} Generate clicked ONCE. Monitoring generation progress...`);
 
       // 6. Start sequential tracking loop
       startTrackingGeneration(index, prompt, rawPrompt, total, timestamp);

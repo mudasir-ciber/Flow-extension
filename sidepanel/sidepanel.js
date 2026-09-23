@@ -770,15 +770,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Validate Character Requirement: At least one must be filled!
-    const isCharacterValid = validateCharacterRequirements();
-    if (!isCharacterValid) {
-      const proceedAnyway = confirm('⚠️ CHARACTER REQUIREMENT NOTICE:\n\nAapne na character sheet image upload ki hai aur na hi description likha hai.\n\nCharacter consistency maintain karne ke liye dono mein se ek lazmi hona chahiye. Kya aap CHARACTER tab mein ja kar add karna chahte hain?');
-      if (proceedAnyway) {
-        switchTab('tab-character');
-        return;
-      }
-    }
+    // Check character requirements silently
+    validateCharacterRequirements();
 
     // Check if Google Flow tab is open
     let flowTab = null;

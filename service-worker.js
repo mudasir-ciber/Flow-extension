@@ -631,6 +631,25 @@ if (chrome.runtime && chrome.runtime.onMessage) {
               timestamp: queue[0].timestamp || null,
               total: queue.length
             }
+          }, async (res, err) => {
+            if (err) {
+              await addLog(`Notice: Re-connecting to Flow tab...`);
+              try {
+                await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+                setTimeout(() => {
+                  safeSendTabMessage(tab.id, {
+                    action: 'RUN_PROMPT',
+                    data: {
+                      index: 0,
+                      prompt: firstPrompt,
+                      rawPrompt: queue[0].prompt,
+                      timestamp: queue[0].timestamp || null,
+                      total: queue.length
+                    }
+                  });
+                }, 400);
+              } catch (e) {}
+            }
           });
 
           sendResponse({ success: true });

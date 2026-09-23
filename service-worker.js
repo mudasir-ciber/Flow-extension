@@ -28,7 +28,6 @@ if (chrome.runtime && chrome.runtime.onInstalled) {
       'delaySeconds',
       'expectedImages',
       'maxTimeoutSeconds',
-      'filenameStyle',
       'stats',
       'logs'
     ]);
@@ -43,7 +42,6 @@ if (chrome.runtime && chrome.runtime.onInstalled) {
       delaySeconds: current.delaySeconds || 5,
       expectedImages: current.expectedImages || 4,
       maxTimeoutSeconds: current.maxTimeoutSeconds || 120,
-      filenameStyle: current.filenameStyle || 'ts_only',
       stats: current.stats || { totalPrompts: 0, completedPrompts: 0, downloadedImages: 0 },
       logs: current.logs || [{ timestamp: new Date().toLocaleTimeString(), text: 'Flow Batch Automation Engine Ready.' }]
     });
@@ -171,21 +169,24 @@ async function addLog(message) {
 
 // --- HELPER: FIND GOOGLE FLOW TAB ---
 
-function isFlowUrl(url) {
-  if (!url) return false;
-  return /flow\.google|labs\.google/i.test(url);
-}
-
 async function findFlowTab() {
   try {
     // Prioritize active tab in the current focused window
     const [currentActive] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (currentActive && isFlowUrl(currentActive.url)) {
+    if (currentActive && currentActive.url && (
+      currentActive.url.includes('flow.google') ||
+      currentActive.url.includes('labs.google/flow') ||
+      currentActive.url.includes('labs.google/fx/tools/flow')
+    )) {
       return currentActive;
     }
 
     const allTabs = await chrome.tabs.query({});
-    const flowTabs = allTabs.filter(t => isFlowUrl(t.url));
+    const flowTabs = allTabs.filter(t => t.url && (
+      t.url.includes('flow.google') ||
+      t.url.includes('labs.google/flow') ||
+      t.url.includes('labs.google/fx/tools/flow')
+    ));
     if (!flowTabs || flowTabs.length === 0) return null;
     const activeFlow = flowTabs.find(t => t.active);
     return activeFlow || flowTabs[0];
@@ -236,27 +237,14 @@ function sanitizePath(str) {
   return (str || 'Flow_Batch').replace(/[<>:"/\\|?*]+/g, '_').trim();
 }
 
-function sanitizeTimestampForFilename(raw) {
-  if (!raw) return '';
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^[\[\(\{\s]+|[\]\)\}\s]+$/g, '');
-  cleaned = cleaned.replace(/:/g, '.');
-  cleaned = cleaned.replace(/[\\/*?"<>|]+/g, '_');
-  cleaned = cleaned.replace(/\s*(?:sec|seconds|s)\b/gi, '');
-  cleaned = cleaned.replace(/\s*(?:-->)\s*/gi, ' - ');
-  cleaned = cleaned.replace(/\bto\b/gi, 'To');
-  return cleaned.trim();
-}
-
 // --- IMAGE DOWNLOADER VIA CHROME DOWNLOADS API (WAITS FOR DISK COMPLETION) ---
 
-async function downloadImages(imageUrls, promptIndex, customFolder, timestamp) {
-  const { subfolder = 'Flow_Batch', filenameStyle = 'ts_only' } = await chrome.storage.local.get(['subfolder', 'filenameStyle']);
+async function downloadImages(imageUrls, promptIndex, customFolder) {
+  const { subfolder = 'Flow_Batch' } = await chrome.storage.local.get('subfolder');
   const targetFolder = sanitizePath(customFolder || subfolder);
   const promptNumberStr = String(promptIndex + 1).padStart(4, '0');
-  const cleanTs = timestamp ? sanitizeTimestampForFilename(timestamp) : '';
 
-  await addLog(`⬇️ Scene #${promptIndex + 1}${cleanTs ? ` ( ${cleanTs} )` : ''}: Initiating download for ${imageUrls.length} image(s)...`);
+  await addLog(`⬇️ Scene #${promptIndex + 1}: Initiating download for ${imageUrls.length} image(s)...`);
 
   const downloadPromises = imageUrls.map((url, idx) => {
     return new Promise((resolve) => {
@@ -264,21 +252,7 @@ async function downloadImages(imageUrls, promptIndex, customFolder, timestamp) {
       if (url.includes('.webp') || url.includes('format=webp')) ext = 'webp';
       else if (url.includes('.jpg') || url.includes('.jpeg')) ext = 'jpg';
 
-      let baseName = '';
-      if (cleanTs) {
-        if (filenameStyle === 'prefix_scene_ts') {
-          baseName = `Scene_${promptNumberStr}_( ${cleanTs} )_img${idx + 1}`;
-        } else if (filenameStyle === 'ts_first') {
-          baseName = `( ${cleanTs} )_Scene_${promptNumberStr}_img${idx + 1}`;
-        } else {
-          // Default: ts_only -> e.g. "( 00 To 05 )_img1"
-          baseName = `( ${cleanTs} )_img${idx + 1}`;
-        }
-      } else {
-        baseName = `Scene_${promptNumberStr}_img${idx + 1}`;
-      }
-
-      const filename = `${targetFolder}/${baseName}.${ext}`;
+      const filename = `${targetFolder}/Scene_${promptNumberStr}_img${idx + 1}.${ext}`;
 
       chrome.downloads.download(
         {
@@ -417,14 +391,13 @@ async function advanceQueue() {
       finalPrompt = `${finalPrompt}, ${anchor}`;
     }
 
-    await addLog(`Starting Scene #${nextIndex + 1} of ${fresh.queue.length}${item.timestamp ? ` [${item.timestamp}]` : ''}`);
+    await addLog(`Starting Scene #${nextIndex + 1} of ${fresh.queue.length}`);
     safeSendTabMessage(targetTab.id, {
       action: 'RUN_PROMPT',
       data: {
         index: nextIndex,
         prompt: finalPrompt,
         rawPrompt: item.prompt,
-        timestamp: item.timestamp || null,
         total: fresh.queue.length
       }
     }, (res, err) => {
@@ -457,69 +430,6 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
   });
 }
 
-// --- STANDALONE DESKTOP HUD & FLOATING PANEL WINDOWS ---
-let hudWindowId = null;
-let panelWindowId = null;
-
-async function openOrFocusPanelWindow() {
-  try {
-    if (panelWindowId) {
-      const existing = await chrome.windows.get(panelWindowId).catch(() => null);
-      if (existing) {
-        await chrome.windows.update(panelWindowId, { focused: true });
-        return existing;
-      }
-    }
-    const newWin = await chrome.windows.create({
-      url: 'sidepanel/sidepanel.html?mode=window',
-      type: 'popup',
-      width: 480,
-      height: 780,
-      focused: true
-    });
-    panelWindowId = newWin.id;
-    return newWin;
-  } catch (err) {
-    console.warn('[Flow SW] openOrFocusPanelWindow error:', err);
-    return null;
-  }
-}
-
-async function openOrFocusHudWindow() {
-  try {
-    if (hudWindowId) {
-      const existing = await chrome.windows.get(hudWindowId).catch(() => null);
-      if (existing) {
-        await chrome.windows.update(hudWindowId, { focused: true });
-        return existing;
-      }
-    }
-    const newWin = await chrome.windows.create({
-      url: 'hud/hud.html',
-      type: 'popup',
-      width: 820,
-      height: 520,
-      focused: true
-    });
-    hudWindowId = newWin.id;
-    return newWin;
-  } catch (err) {
-    console.warn('[Flow SW] openOrFocusHudWindow error:', err);
-    return null;
-  }
-}
-
-if (chrome.windows && chrome.windows.onRemoved) {
-  chrome.windows.onRemoved.addListener((windowId) => {
-    if (windowId === hudWindowId) {
-      hudWindowId = null;
-    }
-    if (windowId === panelWindowId) {
-      panelWindowId = null;
-    }
-  });
-}
-
 // --- RUNTIME MESSAGE DISPATCHER ---
 
 const SUPPORTED_ACTIONS = [
@@ -530,10 +440,7 @@ const SUPPORTED_ACTIONS = [
   'STOP_BATCH',
   'DOWNLOAD_IMAGES',
   'PROMPT_COMPLETED',
-  'PROMPT_ERROR',
-  'OPEN_HUD_WINDOW',
-  'OPEN_PANEL_WINDOW',
-  'GENERATION_TICK'
+  'PROMPT_ERROR'
 ];
 
 if (chrome.runtime && chrome.runtime.onMessage) {
@@ -551,26 +458,8 @@ if (chrome.runtime && chrome.runtime.onMessage) {
           break;
         }
 
-        case 'OPEN_HUD_WINDOW': {
-          const win = await openOrFocusHudWindow();
-          sendResponse({ success: !!win });
-          break;
-        }
-
-        case 'OPEN_PANEL_WINDOW': {
-          const win = await openOrFocusPanelWindow();
-          sendResponse({ success: !!win });
-          break;
-        }
-
-        case 'GENERATION_TICK': {
-          safeSendRuntimeMessage({ action: 'GENERATION_TICK', data: message.data });
-          sendResponse({ success: true });
-          break;
-        }
-
         case 'START_BATCH': {
-          const { queue, characterAnchor, anchorPosition, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds, filenameStyle } = message;
+          const { queue, characterAnchor, anchorPosition, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds } = message;
 
           await chrome.storage.local.set({
             queue: queue || [],
@@ -582,7 +471,6 @@ if (chrome.runtime && chrome.runtime.onMessage) {
             delaySeconds: delaySeconds || 5,
             expectedImages: expectedImages || 4,
             maxTimeoutSeconds: maxTimeoutSeconds || 120,
-            filenameStyle: filenameStyle || 'ts_only',
             stats: {
               totalPrompts: queue?.length || 0,
               completedPrompts: 0,
@@ -621,34 +509,14 @@ if (chrome.runtime && chrome.runtime.onMessage) {
             firstPrompt = `${firstPrompt}, ${anchor}`;
           }
 
-          await addLog(`Running Scene #1 of ${queue.length}${queue[0].timestamp ? ` [${queue[0].timestamp}]` : ''}`);
+          await addLog(`Running Scene #1 of ${queue.length}`);
           safeSendTabMessage(tab.id, {
             action: 'RUN_PROMPT',
             data: {
               index: 0,
               prompt: firstPrompt,
               rawPrompt: queue[0].prompt,
-              timestamp: queue[0].timestamp || null,
               total: queue.length
-            }
-          }, async (res, err) => {
-            if (err) {
-              await addLog(`Notice: Re-connecting to Flow tab...`);
-              try {
-                await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-                setTimeout(() => {
-                  safeSendTabMessage(tab.id, {
-                    action: 'RUN_PROMPT',
-                    data: {
-                      index: 0,
-                      prompt: firstPrompt,
-                      rawPrompt: queue[0].prompt,
-                      timestamp: queue[0].timestamp || null,
-                      total: queue.length
-                    }
-                  });
-                }, 400);
-              } catch (e) {}
             }
           });
 
@@ -703,7 +571,6 @@ if (chrome.runtime && chrome.runtime.onMessage) {
               index: state.currentIndex,
               prompt: currentPrompt,
               rawPrompt: currentItem.prompt,
-              timestamp: currentItem?.timestamp || null,
               total: state.queue.length
             }
           });
@@ -725,15 +592,8 @@ if (chrome.runtime && chrome.runtime.onMessage) {
         }
 
         case 'DOWNLOAD_IMAGES': {
-          const { imageUrls, promptIndex, subfolder, timestamp } = message;
-          let ts = timestamp;
-          if (!ts) {
-            const { queue = [] } = await chrome.storage.local.get('queue');
-            if (queue[promptIndex] && queue[promptIndex].timestamp) {
-              ts = queue[promptIndex].timestamp;
-            }
-          }
-          const count = await downloadImages(imageUrls || [], promptIndex || 0, subfolder, ts);
+          const { imageUrls, promptIndex, subfolder } = message;
+          const count = await downloadImages(imageUrls || [], promptIndex || 0, subfolder);
           sendResponse({ success: true, count });
           break;
         }

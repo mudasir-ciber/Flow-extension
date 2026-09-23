@@ -9,7 +9,7 @@
 <body class="theme-dark">
   <div class="app-container">
     <!-- Header -->
-    <header class="app-header" id="app-header">
+    <header class="app-header">
       <div class="brand">
         <img class="brand-logo" src="../icons/icon-48.png" alt="Logo">
         <div class="brand-text">
@@ -17,47 +17,28 @@
           <span class="sub-tag">Studio Automation Engine</span>
         </div>
       </div>
-      <div class="header-actions">
-        <div class="status-pill" id="global-status-pill">IDLE</div>
-        <button class="header-btn" id="btn-popout-window" title="Float / Pop out into movable desktop window (Screen par kahi bhi move karein)">
-          <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-        </button>
-        <!-- Windows-style OS controls (Visible in popped-out window mode) -->
-        <div class="window-os-controls" id="window-os-controls" style="display: none;">
-          <button class="win-btn win-min" id="win-btn-min" title="Minimize to Windows Taskbar">─</button>
-          <button class="win-btn win-max" id="win-btn-max" title="Maximize / Restore">🗖</button>
-          <button class="win-btn win-close" id="win-btn-close" title="Close">✕</button>
-        </div>
-      </div>
+      <div class="status-pill" id="global-status-pill">IDLE</div>
     </header>
 
-    <!-- Navigation Tabs: HOME, PROMPTS, TIMESTAMPS, CHARACTER, SETTINGS with Left-to-Right Horizontal Scroller -->
-    <div class="nav-tabs-wrapper">
-      <button class="tab-scroll-arrow left" id="btn-tab-scroll-left" title="Scroll left">‹</button>
-      <nav class="nav-tabs" id="nav-tabs">
-        <button class="tab-btn active" data-tab="tab-home">
-          <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-          HOME
-        </button>
-        <button class="tab-btn" data-tab="tab-prompts">
-          <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-          PROMPTS
-        </button>
-        <button class="tab-btn" data-tab="tab-timestamps">
-          <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-          TIMESTAMPS
-        </button>
-        <button class="tab-btn" data-tab="tab-character">
-          <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-          CHARACTER
-        </button>
-        <button class="tab-btn" data-tab="tab-settings">
-          <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c-.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-          SETTINGS
-        </button>
-      </nav>
-      <button class="tab-scroll-arrow right" id="btn-tab-scroll-right" title="Scroll right">›</button>
-    </div>
+    <!-- Navigation Tabs: HOME, PROMPTS, CHARACTER, SETTINGS -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-home">
+        <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        HOME
+      </button>
+      <button class="tab-btn" data-tab="tab-prompts">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        PROMPTS
+      </button>
+      <button class="tab-btn" data-tab="tab-character">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        CHARACTER
+      </button>
+      <button class="tab-btn" data-tab="tab-settings">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        SETTINGS
+      </button>
+    </nav>
 
     <!-- TAB 1: HOME (Live Progress, Controls & Reset) -->
     <section class="tab-content active" id="tab-home">
@@ -87,31 +68,12 @@
           </div>
         </div>
 
-        <!-- Active Sentence Card with Dynamic SVG Perimeter Red Line -->
-        <div class="active-sentence-card" id="active-sentence-card">
-          <svg class="sentence-perimeter-svg" id="sentence-perimeter-svg">
-            <rect id="sentence-perimeter-rect" x="2" y="2" rx="8" ry="8" />
-          </svg>
-          <div class="sentence-card-body">
-            <div class="sentence-card-header">
-              <span class="sentence-card-tag">⚡ Current Generating Sentence</span>
-              <div class="sentence-card-badges">
-                <span class="sentence-ts-pill" id="monitor-active-ts" style="display: none;">( 00 To 05 )</span>
-                <span class="sentence-percent-pill" id="sentence-percent-pill" style="display: none;">0%</span>
-              </div>
-            </div>
-            <p class="sentence-script-text" id="monitor-active-sentence-text" style="display: none;"></p>
-            <p class="active-prompt-text" id="monitor-active-prompt-text">No prompt is currently running.</p>
-          </div>
+        <div class="active-prompt-box">
+          <span class="sub-label">Current Generating Prompt:</span>
+          <p id="monitor-active-prompt-text">No prompt is currently running.</p>
         </div>
 
-        <!-- Strict Sequential Notice -->
-        <div class="info-note">
-          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-          <span>Strict Mode: Ek time mein sirf 1 prompt chalega, jab tak images create hokar 4 download na hon, tab tak agla prompt load nahi hoga.</span>
-        </div>
-
-        <!-- Home Controls: Run, Pause, Cancel, Float Panel, Reset -->
+        <!-- Home Controls: Run, Pause, Cancel, Reset -->
         <div class="control-buttons-grid">
           <button class="btn btn-primary" id="btn-run-batch">
             <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -124,10 +86,6 @@
           <button class="btn btn-danger" id="btn-cancel-batch" disabled>
             <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
             Cancel
-          </button>
-          <button class="btn btn-secondary" id="btn-popout-panel" title="Float this panel as a movable desktop window (Move anywhere on screen)">
-            <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-            Float Panel
           </button>
           <button class="btn btn-reset" id="btn-reset-all" title="Clear everything and start fresh">
             <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
@@ -175,39 +133,6 @@
           Proceed to Home & Run
         </button>
         <button class="btn btn-secondary" id="btn-clear-prompts">Clear Prompts</button>
-      </div>
-    </section>
-
-    <!-- TAB 3: TIMESTAMPS (Script & Timestamps Synchronization) -->
-    <section class="tab-content" id="tab-timestamps">
-      <div class="card">
-        <div class="card-header">
-          <label for="timestamps-script-input" class="card-title">Script with Timestamps</label>
-          <span class="badge badge-accent" id="timestamps-count-badge">0 Timestamps</span>
-        </div>
-        <p class="helper-text">
-          ⏱️ <strong>Timestamp-Based Renaming:</strong> Script timestamps ke sath paste karein (e.g. <code>00 to 05 sec: [sentence]</code> ya <code>00:00 - 00:05</code>). Har sentence ki images ke naam mein ye timestamp lag kar save hoga!
-        </p>
-        <textarea id="timestamps-script-input" rows="8" placeholder="Paste script with timestamps here...&#10;&#10;00 to 05 sec: In the late Bronze Age Aegean, a mysterious warrior awakens on the deck.&#10;05 to 12 sec: The warship sails through the morning fog towards burning Troy.&#10;12 to 18 sec: Flames rise in the distance as the sailors pull the heavy oars."></textarea>
-      </div>
-
-      <!-- Live Sync & Alignment Table -->
-      <div class="card" id="timestamps-alignment-card" style="display: none; margin-top: 12px;">
-        <div class="card-header">
-          <span class="card-title">⏱️ Prompt & Timestamp Synchronization</span>
-          <span class="badge badge-success" id="timestamps-sync-status">Synced</span>
-        </div>
-        <p class="helper-text" id="timestamps-sync-summary">Har timestamp automatically apne mutalliqah scene prompt aur file name ke sath link ho gaya hai:</p>
-        <div class="timestamps-alignment-list" id="timestamps-alignment-list">
-          <!-- Real-time paired rows appear here -->
-        </div>
-      </div>
-
-      <div class="action-bar">
-        <button class="btn btn-primary" id="btn-timestamps-to-home">
-          Proceed to Home & Run
-        </button>
-        <button class="btn btn-secondary" id="btn-clear-timestamps">Clear Script</button>
       </div>
     </section>
 
@@ -329,13 +254,8 @@
         </div>
 
         <div class="form-group">
-          <label for="setting-filename-style">Timestamp Filename Format:</label>
-          <select id="setting-filename-style">
-            <option value="ts_only" selected>( 00 To 05 )_img1.png (Pure Timestamp - User Format)</option>
-            <option value="prefix_scene_ts">Scene_0001_( 00 To 05 )_img1.png</option>
-            <option value="ts_first">( 00 To 05 )_Scene_0001_img1.png</option>
-          </select>
-          <span class="small-hint">Script timestamps hone par images strictly is format mein rename hongi.</span>
+          <label for="setting-timeout">Max Timeout Per Prompt (seconds):</label>
+          <input type="number" id="setting-timeout" value="120" min="30" max="300">
         </div>
 
         <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>

@@ -2,6 +2,7 @@
 // Strictly executes 1 prompt at a time, tracks live generation, downloads 4 images, auto-retries on failure.
 
 (function () {
+  if (window.__FLOW_AUTOPROMPT_INJECTED) return;
   window.__FLOW_AUTOPROMPT_INJECTED = true;
 
   console.log('[Flow AutoPrompt] Content script active on:', window.location.href);
@@ -60,10 +61,7 @@
     return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
   }
 
-  let isTrackingActive = false;
-
   function stopTracking() {
-    isTrackingActive = false;
     window.__triggerTrackingStep = null;
     stopAudioKeepalive();
     if (trackingTimerId) {
@@ -198,7 +196,7 @@
 // --- ELEMENT DETECTION ---
 
   function findPromptInput() {
-    // 1. Exact Google Flow ProseMirror editor (Original working implementation)
+    // 1. Exact Google Flow ProseMirror editor
     const flowProse = document.querySelector(
       'flow-rich-text-editor .ProseMirror[contenteditable="true"], flow-base-prompt-box .ProseMirror[contenteditable="true"], .prompt-box-container .ProseMirror, .ProseMirror[contenteditable="true"]'
     );
@@ -232,7 +230,7 @@
   function findGenerateButton(inputEl) {
     // 1. Exact Google Flow Generate button
     const flowBtn = document.querySelector(
-      'flow-generate-icon-button button.generate-icon-button, flow-generate-icon-button button, button[aria-label="Start generation"], button[aria-label*="Start generation" i], button.generate-icon-button'
+      'flow-generate-icon-button button.generate-icon-button, flow-generate-icon-button button, button[aria-label="Start generation"], button.generate-icon-button'
     );
     if (flowBtn) return flowBtn;
 
@@ -244,18 +242,10 @@
 
     // 3. Search buttons inside prompt box container
     if (inputEl) {
-      const container = inputEl.closest('flow-base-prompt-box') || inputEl.closest('.prompt-box-container') || inputEl.parentElement?.parentElement || inputEl.parentElement;
+      const container = inputEl.closest('flow-base-prompt-box') || inputEl.closest('.prompt-box-container') || inputEl.parentElement;
       if (container) {
-        const btn = container.querySelector('flow-generate-icon-button button, button[aria-label="Start generation"], button[aria-label*="Start generation" i], button[type="submit"]');
+        const btn = container.querySelector('flow-generate-icon-button button, button[aria-label="Start generation"], button[type="submit"]');
         if (btn) return btn;
-
-        const containerButtons = Array.from(container.querySelectorAll('button, div[role="button"]'));
-        const matched = containerButtons.find(b => {
-          const label = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
-          return /start generation|generate|create|run|submit|send|arrow/i.test(label) || /generate|create|run|submit|send/i.test(title);
-        });
-        if (matched) return matched;
       }
     }
 
@@ -283,27 +273,11 @@
   }
 
   async function injectTextIntoProseMirror(el, text) {
-    if (!el) return false;
     el.focus();
     el.click();
     await sleep(80);
 
-    // If textarea
-    if (el instanceof HTMLTextAreaElement || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-      try {
-        const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (nativeSetter) nativeSetter.call(el, text);
-        else el.value = text;
-      } catch(e) {
-        el.value = text;
-      }
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }
-
-    // 1. Clear previous text cleanly using Selection + execCommand (Original working implementation)
+    // 1. Clear previous text cleanly using Selection + execCommand
     try {
       const sel = window.getSelection();
       const range = document.createRange();
@@ -369,8 +343,6 @@
     await sleep(150);
     return (el.textContent || '').trim().length > 0;
   }
-
-  const injectTextIntoElement = injectTextIntoProseMirror;
 
   // Trigger Generation: Strictly ONE single trigger (Button click, or Enter fallback)
   function triggerGenerate(btn, inputEl) {
@@ -541,69 +513,61 @@
     isDownloading = false;
     stopTracking();
 
-    const { index, prompt, rawPrompt, total, isRetry, timestamp } = taskData;
+    const { index, prompt, rawPrompt, total, isRetry } = taskData;
 
-    try {
-      if (!isRetry) {
-        currentRetryCount = 0;
-      }
-
-      const sceneHeader = `[Scene #${index + 1}/${total}${timestamp ? ` | ${timestamp}` : ''}]`;
-      await addLogSW(`${sceneHeader} ${isRetry ? `(Retry #${currentRetryCount}) ` : ''}Injecting prompt into Flow...`);
-
-      // 1. Snapshot existing media & existing error tiles
-      snapshotImages();
-
-      // 2. Activate prompt box & find prompt input element
-      activatePromptBox();
-      await sleep(100);
-
-      let inputEl = findPromptInput();
-      if (!inputEl) {
-        for (let i = 0; i < 8; i++) {
-          await sleep(400);
-          activatePromptBox();
-          inputEl = findPromptInput();
-          if (inputEl) break;
-        }
-      }
-
-      if (!inputEl) {
-        isExecuting = false;
-        const err = 'Prompt input box not found. Please ensure Flow studio / project is open on this tab.';
-        await addLogSW(`❌ ${err}`);
-        safeSend({ action: 'PROMPT_ERROR', promptIndex: index, error: err });
-        return;
-      }
-
-      // 3. Inject prompt cleanly (Sanitized of any heading labels)
-      const sanitizedPrompt = cleanPromptContent(prompt) || prompt;
-      await injectTextIntoElement(inputEl, sanitizedPrompt);
-      await sleep(250);
-
-      // 4. Find generate button
-      let btn = findGenerateButton(inputEl);
-
-      // 5. Trigger generation ONCE (Native click + Enter fallback)
-      triggerGenerate(btn, inputEl);
-      await addLogSW(`${sceneHeader} Generate clicked ONCE. Monitoring generation progress...`);
-
-      // 6. Start sequential tracking loop
-      startTrackingGeneration(index, prompt, rawPrompt, total, timestamp);
-    } catch (e) {
-      console.error('[Flow AutoPrompt] executePrompt error:', e);
-      isExecuting = false;
-      await addLogSW(`❌ Error in Scene #${index + 1}: ${e?.message || e}`);
-      safeSend({ action: 'PROMPT_ERROR', promptIndex: index, error: e?.message || 'Execution error' });
+    if (!isRetry) {
+      currentRetryCount = 0;
     }
+
+    const sceneHeader = `[Scene #${index + 1}/${total}]`;
+    await addLogSW(`${sceneHeader} ${isRetry ? `(Retry #${currentRetryCount}) ` : ''}Injecting prompt into Flow...`);
+
+    // 1. Snapshot existing media & existing error tiles
+    snapshotImages();
+
+    // 2. Activate prompt box & find prompt input element
+    activatePromptBox();
+    await sleep(100);
+
+    let inputEl = findPromptInput();
+    if (!inputEl) {
+      for (let i = 0; i < 8; i++) {
+        await sleep(400);
+        activatePromptBox();
+        inputEl = findPromptInput();
+        if (inputEl) break;
+      }
+    }
+
+    if (!inputEl) {
+      isExecuting = false;
+      const err = 'Prompt input box not found. Please ensure Flow studio / project is open on this tab.';
+      await addLogSW(`❌ ${err}`);
+      safeSend({ action: 'PROMPT_ERROR', promptIndex: index, error: err });
+      return;
+    }
+
+    // 3. Inject prompt cleanly into ProseMirror (Sanitized of any heading labels)
+    const sanitizedPrompt = cleanPromptContent(prompt) || prompt;
+    await injectTextIntoProseMirror(inputEl, sanitizedPrompt);
+    await sleep(250);
+
+    // 4. Find generate button
+    let btn = findGenerateButton(inputEl);
+
+    // 5. Trigger generation ONCE (Strictly 1 native click)
+    triggerGenerate(btn, inputEl);
+    await addLogSW(`${sceneHeader} Generate clicked ONCE. Monitoring generation progress...`);
+
+    // 6. Start sequential tracking loop
+    startTrackingGeneration(index, prompt, rawPrompt, total);
   }
 
-  function startTrackingGeneration(promptIndex, promptText, rawPrompt, total, timestamp) {
+  function startTrackingGeneration(promptIndex, promptText, rawPrompt, total) {
     const startTime = Date.now();
     let stableCount = 0;
     let lastFoundImages = [];
     let lastReportedSec = 0;
-    isTrackingActive = true;
 
     chrome.storage.local.get(['maxTimeoutSeconds', 'expectedImages', 'subfolder'], (settings) => {
       const timeoutSec = (settings.maxTimeoutSeconds || 120) * 1000;
@@ -613,7 +577,7 @@
       let isStepBusy = false;
 
       async function trackingStep() {
-        if (!isExecuting || isPaused || isStepBusy || !isTrackingActive) {
+        if (!isExecuting || isPaused || isStepBusy) {
           return;
         }
         isStepBusy = true;
@@ -622,31 +586,18 @@
           const elapsed = Date.now() - startTime;
           const elapsedSec = Math.round(elapsed / 1000);
 
-          // --- 1. INSPECT CURRENT FLOW STATE FIRST (Declared before logging) ---
-          const currentNewImages = getNewGeneratedImages();
-          const isStillGenerating = isGeneratingActive();
-          const errorTiles = getNewErrorTiles();
-          const totalResolved = currentNewImages.length + errorTiles.length;
-          const imagesFullyLoaded = areImagesFullyRendered(currentNewImages);
-
           // Periodic tracking log every 5 seconds
           if (elapsedSec >= lastReportedSec + 5) {
             lastReportedSec = elapsedSec;
             await addLogSW(`[Scene #${promptIndex + 1}] Monitoring: ${currentNewImages.length}/${expectedImages} image(s) visible (${errorTiles.length} failed) | ${elapsedSec}s elapsed`);
           }
 
-          // Broadcast live generation telemetry to standalone HUD window & Side Panel
-          safeSend({
-            action: 'GENERATION_TICK',
-            data: {
-              promptIndex: promptIndex,
-              timestamp: timestamp,
-              elapsedSec: elapsedSec,
-              expectedImages: expectedImages,
-              imagesCount: currentNewImages.length,
-              isGenerating: isStillGenerating
-            }
-          });
+          // --- 1. INSPECT CURRENT FLOW STATE ---
+          const currentNewImages = getNewGeneratedImages();
+          const isStillGenerating = isGeneratingActive();
+          const errorTiles = getNewErrorTiles();
+          const totalResolved = currentNewImages.length + errorTiles.length;
+          const imagesFullyLoaded = areImagesFullyRendered(currentNewImages);
 
           // Track image count stability
           if (currentNewImages.length > 0) {
@@ -692,8 +643,7 @@
                 imageUrls: currentNewImages,
                 promptIndex: promptIndex,
                 promptText: promptText,
-                subfolder: subfolder,
-                timestamp: timestamp || null
+                subfolder: subfolder
               }, async (res) => {
                 const count = res?.count || currentNewImages.length;
                 await addLogSW(`💾 Scene #${promptIndex + 1}: All ${count} image(s) completely downloaded to disk! Moving to next scene...`);
@@ -738,7 +688,6 @@
                 prompt: promptText,
                 rawPrompt: rawPrompt,
                 total: total,
-                timestamp: timestamp,
                 isRetry: true
               });
               return;
@@ -766,8 +715,7 @@
                 action: 'DOWNLOAD_IMAGES',
                 imageUrls: currentNewImages,
                 promptIndex: promptIndex,
-                subfolder: subfolder,
-                timestamp: timestamp || null
+                subfolder: subfolder
               }, () => {
                 isExecuting = false;
                 safeSend({
@@ -790,7 +738,6 @@
                 prompt: promptText,
                 rawPrompt: rawPrompt,
                 total: total,
-                timestamp: timestamp,
                 isRetry: true
               });
             } else {
@@ -804,26 +751,23 @@
             }
             return;
           }
-        } catch (stepErr) {
-          console.error('[Flow AutoPrompt] trackingStep error:', stepErr);
-        } finally {
-          isStepBusy = false;
-          // Reschedule next check safely unless stopped or completed
-          if (isExecuting && !isPaused && !isDownloading && isTrackingActive) {
-            clearTimeout(trackingTimerId);
-            trackingTimerId = setTimeout(trackingStep, 1000);
-          }
+
+        // Schedule next check safely (no overlapping intervals)
+        if (isExecuting && !isPaused && !isDownloading) {
+          trackingTimerId = setTimeout(trackingStep, 1000);
         }
+      } finally {
+        isStepBusy = false;
       }
+    }
 
-      // Expose trackingStep to IPC keepalive Port tick
-      window.__triggerTrackingStep = trackingStep;
+    // Expose trackingStep to IPC keepalive Port tick
+    window.__triggerTrackingStep = trackingStep;
 
-      // Start initial step
-      clearTimeout(trackingTimerId);
-      trackingTimerId = setTimeout(trackingStep, 1000);
-    });
-  }
+    // Start initial step
+    trackingTimerId = setTimeout(trackingStep, 1000);
+  });
+}
 
   // --- MESSAGE LISTENER FROM EXTENSION & SERVICE WORKER ---
   if (chrome.runtime && chrome.runtime.onMessage) {

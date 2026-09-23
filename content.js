@@ -228,102 +228,75 @@
   }
 
   function findGenerateButton(inputEl) {
-    // 1. Custom calibrated selector
+    // 0. Custom calibrated selector
     if (customSelectors.button) {
       const el = document.querySelector(customSelectors.button);
-      if (el && isVisible(el)) return el;
+      if (el) return el.tagName === 'BUTTON' ? el : (el.querySelector('button') || el);
+    }
+
+    // 1. Google Flow Exact DOM Selectors:
+    // <flow-generate-icon-button><button type="submit" aria-label="Start generation" class="generate-icon-button"><mat-icon>arrow_forward</mat-icon></button></flow-generate-icon-button>
+    const flowDirectSelectors = [
+      'flow-generate-icon-button button',
+      'button[aria-label="Start generation"]',
+      'button.generate-icon-button',
+      'flow-generate-icon-button',
+      'button[type="submit"].generate-icon-button',
+      'button[type="submit"][aria-label*="generation" i]',
+      'flow-prompt-box button[type="submit"]',
+      'flow-base-prompt-box button[type="submit"]',
+      '.prompt-box-container button[type="submit"]'
+    ];
+
+    for (const sel of flowDirectSelectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        const btn = el.tagName === 'BUTTON' ? el : (el.querySelector('button') || el);
+        if (btn) return btn;
+      }
     }
 
     // 2. Search buttons in the prompt card container
     if (inputEl) {
-      let card = inputEl.closest('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box') || inputEl.parentElement;
+      let card = inputEl.closest('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box, form') || inputEl.parentElement;
       while (card && card !== document.body) {
-        const btns = Array.from(card.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button')).filter(isVisible);
-        if (btns.length >= 2) break;
-        card = card.parentElement;
-      }
+        for (const sel of flowDirectSelectors) {
+          const el = card.querySelector(sel);
+          if (el) {
+            const btn = el.tagName === 'BUTTON' ? el : (el.querySelector('button') || el);
+            if (btn) return btn;
+          }
+        }
 
-      if (card) {
-        const allBtns = Array.from(card.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button')).filter(isVisible);
-        const inputRect = inputEl.getBoundingClientRect();
-
-        // Candidates: buttons in the footer of the card (avoid top-right '×' close button)
-        const footerBtns = allBtns.filter(b => {
-          if (b === inputEl || inputEl.contains(b)) return false;
-          const r = b.getBoundingClientRect();
-          return r.top >= inputRect.top + 20 || r.bottom >= inputRect.bottom - 10;
-        });
-
-        // Filter out non-generate buttons:
-        // Exclude wide pill buttons (model selector "Nano Banana 2 🗖 x4" has width > 80px)
-        // Exclude buttons with long text (model name, aspect ratio), and close/clear buttons
-        const validCandidates = footerBtns.filter(b => {
-          const r = b.getBoundingClientRect();
+        const btns = Array.from(card.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button'));
+        const match = btns.find(b => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
           const text = (b.textContent || '').trim().toLowerCase();
-          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
-
-          // Reject wide pill buttons (the arrow button is circular, ~36x36px)
-          if (r.width > 70 && r.width > r.height * 1.5) return false;
-
-          // Reject buttons with long descriptive text
-          if (text.length > 4 && !/^(east|send|run|go)$/i.test(text)) return false;
-
-          // Reject agent, close, clear, aspect ratio, styles, model
-          if (/agent|close|clear|cancel|delete|reset|model|aspect|ratio|setting/i.test(text + ' ' + aria + ' ' + title)) return false;
-
-          return true;
-        });
-
-        // A. Look for button with arrow, east, send, or generate signals in aria, title, or icon
-        const arrowSignalBtn = validCandidates.find(b => {
-          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-          const title = (b.getAttribute('title') || '').toLowerCase();
           const matIcon = b.querySelector('mat-icon, [class*="icon"]');
           const iconText = (matIcon?.textContent || '').trim().toLowerCase();
-          return /arrow|east|send|generate|run|submit|forward/i.test(aria + ' ' + title + ' ' + iconText);
+          return /arrow_forward|start generation|generate|send|submit/i.test(aria + ' ' + title + ' ' + text + ' ' + iconText);
         });
-        if (arrowSignalBtn) return arrowSignalBtn;
-
-        // B. In Google Flow, the arrow button is the circular button at the absolute far-right edge of the prompt card
-        if (validCandidates.length > 0) {
-          validCandidates.sort((a, b) => {
-            const ra = a.getBoundingClientRect();
-            const rb = b.getBoundingClientRect();
-            return rb.right - ra.right; // maximum rightmost button
-          });
-          return validCandidates[0];
+        if (match) {
+          return match.tagName === 'BUTTON' ? match : (match.querySelector('button') || match);
         }
+
+        card = card.parentElement;
       }
     }
 
-    // 3. Fallback: Search all visible buttons in the bottom half of the window
-    const allButtons = Array.from(document.querySelectorAll('button, [role="button"], md-icon-button')).filter(isVisible);
-    const bottomButtons = allButtons.filter(b => {
-      const rect = b.getBoundingClientRect();
-      if (rect.top <= window.innerHeight * 0.4) return false;
-      if (rect.width > 70 && rect.width > rect.height * 1.5) return false;
-      const text = (b.textContent || '').trim().toLowerCase();
-      if (text.length > 4 && !/^(east|send|run|go)$/i.test(text)) return false;
-      return true;
-    });
-
-    const match = bottomButtons.find(b => {
+    // 3. Fallback: Search all visible buttons in document for arrow_forward or start generation
+    const allButtons = Array.from(document.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button'));
+    const match = allButtons.find(b => {
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const title = (b.getAttribute('title') || '').toLowerCase();
-      const matIcon = b.querySelector('mat-icon');
+      const text = (b.textContent || '').trim().toLowerCase();
+      const matIcon = b.querySelector('mat-icon, [class*="icon"]');
       const iconText = (matIcon?.textContent || '').trim().toLowerCase();
-      return /arrow|send|east|forward|run|submit|generate/i.test(aria + ' ' + title + ' ' + iconText);
+      return /arrow_forward|start generation|generate/i.test(aria + ' ' + title + ' ' + text + ' ' + iconText);
     });
-    if (match) return match;
-
-    if (bottomButtons.length > 0) {
-      bottomButtons.sort((a, b) => {
-        const ra = a.getBoundingClientRect();
-        const rb = b.getBoundingClientRect();
-        return rb.right - ra.right;
-      });
-      return bottomButtons[0];
+    if (match) {
+      return match.tagName === 'BUTTON' ? match : (match.querySelector('button') || match);
     }
 
     return null;
@@ -435,28 +408,29 @@
     } catch (e) {}
     await sleep(50);
 
-    // 2. Insert text via execCommand (synchronous and handles ProseMirror natively without duplicates)
-    let inserted = false;
+    // 2. Primary: Dispatch ClipboardEvent ('paste') with DataTransfer
+    // ProseMirror handles paste natively by updating internal state and firing document transactions
+    let pasted = false;
     try {
-      inserted = document.execCommand('insertText', false, text);
+      const dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData: dt
+      });
+      el.dispatchEvent(pasteEvt);
+      pasted = (el.textContent || '').trim().length > 0;
     } catch (e) {
-      inserted = false;
+      pasted = false;
     }
 
-    // 3. Fallback: DataTransfer paste event ONLY if execCommand did not populate text
-    if (!inserted || !(el.textContent || '').trim()) {
+    // 3. Fallback: execCommand insertText if paste did not populate text
+    if (!pasted || !(el.textContent || '').trim()) {
       try {
-        const dt = new DataTransfer();
-        dt.setData('text/plain', text);
-        const pasteEvt = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          clipboardData: dt
-        });
-        el.dispatchEvent(pasteEvt);
+        document.execCommand('insertText', false, text);
       } catch (e) {}
-      await sleep(60);
     }
 
     // 4. Fallback verification: if still empty, insert paragraph
@@ -469,16 +443,44 @@
       p.textContent = text;
     }
 
-    // 5. Dispatch Angular change detection events
+    // 5. Dispatch InputEvent & Angular change detection events
+    try {
+      el.dispatchEvent(new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        inputType: 'insertText',
+        data: text
+      }));
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        inputType: 'insertText',
+        data: text
+      }));
+    } catch (e) {}
+
     el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
 
-    await sleep(200);
+    // 6. Proactively unlock generate button if Angular left it in disabled state
+    const genBtn = findGenerateButton(el);
+    if (genBtn) {
+      try {
+        genBtn.removeAttribute('disabled');
+        genBtn.disabled = false;
+        genBtn.classList.remove('mat-mdc-button-disabled', 'disabled');
+        genBtn.removeAttribute('aria-disabled');
+      } catch (e) {}
+    }
+
+    await sleep(150);
     return (el.textContent || '').trim().length > 0;
   }
 
-  // Trigger Generation: Click Generate / Arrow Button with complete event sequence + Enter fallback
+  // Trigger Generation: Click Generate / Arrow Button with complete event sequence + form submit + Enter fallback
   function triggerGenerate(btn, inputEl) {
     if (hasSubmittedPrompt) {
       console.log('[Flow AutoPrompt] Already submitted this prompt, skipping duplicate trigger.');
@@ -486,18 +488,19 @@
     }
     hasSubmittedPrompt = true;
 
-    // Primary: Click Generate / Arrow Button with full pointer & mouse events
+    // 1. Force enable button if disabled & click with full pointer & mouse events
     if (btn) {
       try {
         btn.removeAttribute('disabled');
         btn.disabled = false;
         btn.classList.remove('mat-mdc-button-disabled', 'disabled');
         btn.removeAttribute('aria-disabled');
+        btn.setAttribute('tabindex', '0');
         btn.focus();
 
         const rect = btn.getBoundingClientRect();
-        const clientX = rect.left + rect.width / 2;
-        const clientY = rect.top + rect.height / 2;
+        const clientX = rect.left > 0 ? (rect.left + rect.width / 2) : 100;
+        const clientY = rect.top > 0 ? (rect.top + rect.height / 2) : 100;
 
         const opts = {
           bubbles: true,
@@ -511,7 +514,7 @@
           buttons: 1
         };
 
-        const innerTarget = btn.querySelector('svg, mat-icon, span, button') || btn;
+        const innerTarget = btn.querySelector('mat-icon, svg, span, button') || btn;
 
         btn.dispatchEvent(new PointerEvent('pointerdown', opts));
         btn.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -523,6 +526,10 @@
         }
 
         if (innerTarget && innerTarget !== btn) {
+          innerTarget.dispatchEvent(new PointerEvent('pointerdown', opts));
+          innerTarget.dispatchEvent(new MouseEvent('mousedown', opts));
+          innerTarget.dispatchEvent(new PointerEvent('pointerup', opts));
+          innerTarget.dispatchEvent(new MouseEvent('mouseup', opts));
           innerTarget.dispatchEvent(new MouseEvent('click', opts));
           if (typeof innerTarget.click === 'function') {
             innerTarget.click();
@@ -534,17 +541,40 @@
       }
     }
 
-    // Complementary keyboard trigger (Enter / Ctrl+Enter on inputEl)
+    // 2. Submit parent form directly if present (native HTML form submission triggers Angular ngSubmit)
+    const form = btn?.closest('form') || inputEl?.closest('form') || document.querySelector('flow-prompt-box form, flow-base-prompt-box form, .prompt-box-container form');
+    if (form) {
+      try {
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit(btn || undefined);
+        } else {
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+      } catch (e) {
+        try {
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } catch (e2) {}
+      }
+    }
+
+    // 3. Dispatch Enter key sequence directly on inputEl (ProseMirror & Flow keyboard trigger)
     if (inputEl) {
       try {
         inputEl.focus();
-        const kOpts = { bubbles: true, cancelable: true, view: window, composed: true };
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ...kOpts }));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ...kOpts }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ...kOpts }));
-
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, ...kOpts }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, ...kOpts }));
+        const enterOpts = {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          charCode: 13,
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window
+        };
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+        inputEl.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
+        inputEl.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
       } catch (e) {}
     }
   }
@@ -764,12 +794,12 @@
     // 4. Inject prompt cleanly into ProseMirror (Sanitized of any heading labels)
     const sanitizedPrompt = cleanPromptContent(prompt) || prompt;
     await injectTextIntoProseMirror(inputEl, sanitizedPrompt);
-    await sleep(300);
+    await sleep(250);
 
     // 5. Find generate / arrow button (specifically the circular right-arrow button)
     let btn = findGenerateButton(inputEl);
     if (!btn) {
-      await sleep(200);
+      await sleep(150);
       btn = findGenerateButton(inputEl);
     }
 
@@ -777,21 +807,21 @@
     triggerGenerate(btn, inputEl);
     if (btn) {
       const btnDesc = btn.getAttribute('aria-label') || btn.className?.slice(0, 25) || btn.tagName;
-      await addLogSW(`${sceneHeader} Arrow button clicked (${btnDesc}). Monitoring generation...`);
+      await addLogSW(`${sceneHeader} Arrow button clicked (${btnDesc}). Starting generation...`);
     } else {
-      await addLogSW(`${sceneHeader} Submitted via Enter key. Monitoring generation...`);
+      await addLogSW(`${sceneHeader} Submitted via Enter / Form Submit. Starting generation...`);
     }
 
-    // Safety nudge after 1200ms if generation not yet detected
-    setTimeout(() => {
-      if (isExecuting && !isGeneratingActive()) {
-        const freshBtn = findGenerateButton(inputEl) || btn;
-        if (freshBtn) {
+    // Safety nudges: if generation not yet detected, re-trigger at 600ms, 1400ms, and 2500ms
+    [600, 1400, 2500].forEach((delay) => {
+      setTimeout(() => {
+        if (isExecuting && !isGeneratingActive()) {
+          const freshBtn = findGenerateButton(inputEl) || btn;
           hasSubmittedPrompt = false;
           triggerGenerate(freshBtn, inputEl);
         }
-      }
-    }, 1200);
+      }, delay);
+    });
 
     // 7. Start sequential tracking loop
     startTrackingGeneration(index, prompt, rawPrompt, total);

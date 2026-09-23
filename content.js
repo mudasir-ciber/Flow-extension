@@ -551,6 +551,42 @@
 
   // --- MEDIA SNAPSHOTTING & TRACKING ---
 
+  // Helper to ensure we ONLY track genuine generated output images from the canvas,
+  // NEVER input/reference images from prompt box, attachments, chips, avatars, or dataURLs!
+  function isOutputMediaElement(el) {
+    if (!el) return false;
+
+    // 1. Strictly ignore anything inside prompt boxes, toolbar, sidebar, header, dialogs, chips
+    if (el.closest('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box, flow-rich-text-editor, .attachment-chip, .media-chip, flow-media-chip, form, footer, aside, .sidebar, [class*="prompt"], [class*="chip"]')) {
+      return false;
+    }
+
+    // 2. Strictly ignore any extension elements
+    if (el.closest('#amjad-flow-sidepanel, [id*="extension"]')) {
+      return false;
+    }
+
+    const src = getMediaSrc(el);
+    if (!src) return false;
+
+    // 3. Strictly ignore inline base64 data URLs (Google Flow generated images are HTTPS or blob URLs, NEVER data URLs!)
+    if (src.startsWith('data:')) {
+      return false;
+    }
+
+    // 4. Ignore user profile avatars, system icons, emojis, logos
+    if (src.includes('avatar') || src.includes('profile') || src.includes('favicon') || src.includes('logo') || src.includes('emoji')) {
+      return false;
+    }
+
+    // 5. Must have reasonable size (real generated images are at least 80x80 pixels)
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.width < 80) return false;
+    if (rect.height > 0 && rect.height < 80) return false;
+
+    return true;
+  }
+
   function getMediaSrc(el) {
     if (!el) return null;
     let src = el.currentSrc || el.src || el.getAttribute('src') || el.srcset?.split(' ')[0] || el.getAttribute('data-src') || null;
@@ -564,27 +600,24 @@
   }
 
   function snapshotImages() {
-    const images = Array.from(document.querySelectorAll('img, picture source, video')).map(getMediaSrc).filter(Boolean);
+    const mediaEls = Array.from(document.querySelectorAll('img, picture source, video')).filter(isOutputMediaElement);
+    const images = mediaEls.map(getMediaSrc).filter(Boolean);
     existingImagesSnapshot = new Set(images);
 
     const errors = Array.from(document.querySelectorAll('.error-tile, .error-message, div[class*="error-"]'));
     existingErrorTilesSnapshot = new Set(errors);
 
-    console.log(`[Flow AutoPrompt] Snapshot: ${existingImagesSnapshot.size} images, ${existingErrorTilesSnapshot.size} existing error tiles.`);
+    console.log(`[Flow AutoPrompt] Snapshot: ${existingImagesSnapshot.size} existing output images, ${existingErrorTilesSnapshot.size} existing error tiles.`);
   }
 
   function getNewGeneratedImages() {
-    const tilesContainer = document.querySelector('cdk-virtual-scroll-viewport.tiles-container, .virtual-scroll-container, .content-container');
-    const root = tilesContainer || document;
-
-    const allImages = Array.from(root.querySelectorAll('img, picture source, video')).map(getMediaSrc).filter(Boolean);
+    const mediaEls = Array.from(document.querySelectorAll('img, picture source, video')).filter(isOutputMediaElement);
     const newImages = [];
     const seen = new Set();
 
-    for (const src of allImages) {
-      if (src.includes('avatar') || src.includes('profile') || src.includes('favicon') || src.includes('logo') || src.startsWith('data:image/svg')) {
-        continue;
-      }
+    for (const el of mediaEls) {
+      const src = getMediaSrc(el);
+      if (!src) continue;
       if (!existingImagesSnapshot.has(src) && !seen.has(src)) {
         seen.add(src);
         newImages.push(src);
@@ -597,6 +630,7 @@
     if (!imageUrls || imageUrls.length === 0) return false;
     for (const url of imageUrls) {
       const imgs = Array.from(document.querySelectorAll('img')).filter(img => {
+        if (!isOutputMediaElement(img)) return false;
         const src = getMediaSrc(img);
         return src === url || (src && url && (src.includes(url) || url.includes(src)));
       });
@@ -669,6 +703,7 @@
     if (!text) return '';
     return text
       .replace(/^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)(?:\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z]))?\s*[:\-\—\–]\s*/i, '')
+      .replace(/^(?:\[|\()?#?\s*\d{1,2}(?::\d{2})?\s*(?:to|-|—|–)\s*#?\d{1,2}(?::\d{2})?\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i, '')
       .replace(/^(?:\[|\()?#?\d+[\.\)\-:\—\–\]]\s*/, '')
       .replace(/^["']|["']$/g, '')
       .trim();
@@ -829,23 +864,25 @@
                 try { et.remove(); } catch(e) {}
               }
 
-              const failedCount = expectedImages - currentNewImages.length;
+              const downloadTargets = currentNewImages.slice(0, expectedImages);
+              const failedCount = Math.max(0, expectedImages - downloadTargets.length);
               if (failedCount > 0) {
-                await addLogSW(`✅ Scene #${promptIndex + 1}: ${currentNewImages.length} of ${expectedImages} image(s) completely visible (${failedCount} failed). Starting download...`);
+                await addLogSW(`✅ Scene #${promptIndex + 1}: ${downloadTargets.length} of ${expectedImages} image(s) completely visible (${failedCount} failed). Starting download...`);
               } else {
-                await addLogSW(`✅ Scene #${promptIndex + 1}: All ${currentNewImages.length} images completely visible! Starting download...`);
+                await addLogSW(`✅ Scene #${promptIndex + 1}: All ${downloadTargets.length} target image(s) completely visible! Starting download...`);
               }
 
               // Send download request to background service worker (waits until files are completely written to disk)
               safeSend({
                 action: 'DOWNLOAD_IMAGES',
-                imageUrls: currentNewImages,
+                imageUrls: downloadTargets,
                 promptIndex: promptIndex,
                 promptText: promptText,
                 rawPrompt: rawPrompt,
-                subfolder: subfolder
+                subfolder: subfolder,
+                expectedImages: expectedImages
               }, async (res) => {
-                const count = res?.count || currentNewImages.length;
+                const count = res?.count || downloadTargets.length;
                 await addLogSW(`💾 Scene #${promptIndex + 1}: All ${count} image(s) completely downloaded to disk! Moving to next scene...`);
 
                 isExecuting = false;
@@ -861,8 +898,8 @@
             }
           }
 
-          // --- 3. TOTAL FAILURE PATH: ONLY WHEN ALL 4 IMAGES FAIL (0 SUCCESSES) ---
-          // Rule: "phele proper jaiza lena hai ke total 4 images hi generation fail ho gaye hai... bhut tezi se repeat nahi karna"
+          // --- 3. TOTAL FAILURE PATH: ONLY WHEN ALL IMAGES FAIL (0 SUCCESSES) ---
+          // Rule: "phele proper jaiza lena hai ke total images hi generation fail ho gaye hai... bhut tezi se repeat nahi karna"
           // Condition: Exactly ZERO images generated, generation stopped, error tiles present, and elapsed > 10s
           if (currentNewImages.length === 0 && !isStillGenerating && elapsed > 10000 && errorTiles.length > 0) {
             stopTracking();
@@ -878,7 +915,7 @@
 
             currentRetryCount++;
             if (currentRetryCount <= MAX_RETRIES) {
-              await addLogSW(`⚠️ Scene #${promptIndex + 1}: All 4 images failed to generate (0/${expectedImages}). Calmly waiting 8s before retrying SAME prompt... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
+              await addLogSW(`⚠️ Scene #${promptIndex + 1}: All images failed to generate (0/${expectedImages}). Calmly waiting 8s before retrying SAME prompt... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
               await sleep(8000);
 
               // Re-run SAME prompt calmly

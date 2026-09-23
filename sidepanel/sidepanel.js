@@ -71,6 +71,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingTimeout = document.getElementById('setting-timeout');
   const btnSaveSettings = document.getElementById('btn-save-settings');
 
+  // HOME Target Count & CHARACTER Attach Checkbox Elements
+  const countPillBtns = document.querySelectorAll('.count-pill-btn');
+  const selectedCountBadge = document.getElementById('selected-count-badge');
+  const checkAttachRefImage = document.getElementById('check-attach-ref-image');
+
+  function setTargetImageCount(count) {
+    countPillBtns.forEach(b => {
+      const bCount = parseInt(b.getAttribute('data-count'), 10);
+      b.classList.toggle('active', bCount === count);
+    });
+    if (selectedCountBadge) {
+      selectedCountBadge.textContent = count === 1 ? '1 Image' : `${count} Images`;
+    }
+    if (settingExpectedImages) {
+      settingExpectedImages.value = count;
+    }
+  }
+
+  countPillBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const count = parseInt(btn.getAttribute('data-count'), 10) || 4;
+      setTargetImageCount(count);
+      chrome.storage.local.set({ expectedImages: count });
+    });
+  });
+
+  if (checkAttachRefImage) {
+    checkAttachRefImage.addEventListener('change', () => {
+      chrome.storage.local.set({ attachRefImageToFlow: checkAttachRefImage.checked });
+    });
+  }
+
   // --- TAB NAVIGATION ---
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -489,17 +521,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     startSidePanelAudioKeepalive();
 
-    const { referenceImage = null } = await chrome.storage.local.get('referenceImage');
+    const { referenceImage = null, attachRefImageToFlow = false } = await chrome.storage.local.get(['referenceImage', 'attachRefImageToFlow']);
+    const shouldAttachImage = checkAttachRefImage ? checkAttachRefImage.checked : !!attachRefImageToFlow;
+    const targetImageCount = parseInt(settingExpectedImages.value, 10) || 4;
 
     const startRes = await sendRuntimeMessage({
       action: 'START_BATCH',
       queue: queue,
       characterAnchor: characterAnchorInput.value,
       anchorPosition: anchorPos,
-      referenceImage: referenceImage || null,
+      referenceImage: shouldAttachImage ? (referenceImage || null) : null,
+      attachRefImage: shouldAttachImage,
       subfolder: settingSubfolder.value.trim() || 'Flow_Batch',
       delaySeconds: parseInt(settingDelay.value, 10) || 5,
-      expectedImages: parseInt(settingExpectedImages.value, 10) || 4,
+      expectedImages: targetImageCount,
       maxTimeoutSeconds: parseInt(settingTimeout.value, 10) || 120
     });
 
@@ -640,6 +675,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'characterAnchor',
     'anchorPosition',
     'referenceImage',
+    'attachRefImageToFlow',
     'selectedTheme',
     'subfolder',
     'delaySeconds',
@@ -671,13 +707,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     setReferenceImage(initialState.referenceImage);
   }
 
+  if (checkAttachRefImage) {
+    checkAttachRefImage.checked = !!initialState.attachRefImageToFlow;
+  }
+
   if (initialState.selectedTheme) {
     applyTheme(initialState.selectedTheme);
   }
 
   if (initialState.subfolder) settingSubfolder.value = initialState.subfolder;
   if (initialState.delaySeconds) settingDelay.value = initialState.delaySeconds;
-  if (initialState.expectedImages) settingExpectedImages.value = initialState.expectedImages;
+  const initialCount = parseInt(initialState.expectedImages, 10) || 4;
+  setTargetImageCount(initialCount);
   if (initialState.maxTimeoutSeconds) settingTimeout.value = initialState.maxTimeoutSeconds;
 
   validateCharacterRequirements();

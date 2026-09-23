@@ -711,3 +711,46 @@ textarea:focus, input:focus, select:focus {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Target Image Count Selector on Home Tab */
+.target-count-card {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  background: var(--bg-tertiary);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.count-pill-selector {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.count-pill-btn {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.count-pill-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+}
+
+.count-pill-btn.active {
+  background: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
+}

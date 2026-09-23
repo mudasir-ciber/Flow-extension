@@ -73,6 +73,20 @@
           <p id="monitor-active-prompt-text">No prompt is currently running.</p>
         </div>
 
+        <!-- Target Image Count Selector (1, 2, 3, or 4) -->
+        <div class="target-count-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="sub-label" style="margin-bottom: 0;">🎯 Target Images per Scene:</span>
+            <span class="badge badge-accent" id="selected-count-badge">4 Images</span>
+          </div>
+          <div class="count-pill-selector" id="count-pill-selector">
+            <button type="button" class="count-pill-btn" data-count="1">1</button>
+            <button type="button" class="count-pill-btn" data-count="2">2</button>
+            <button type="button" class="count-pill-btn" data-count="3">3</button>
+            <button type="button" class="count-pill-btn active" data-count="4">4</button>
+          </div>
+        </div>
+
         <!-- Home Controls: Run, Pause, Cancel, Reset -->
         <div class="control-buttons-grid">
           <button class="btn btn-primary" id="btn-run-batch">
@@ -166,6 +180,18 @@
               <button class="btn-mini btn-danger" id="btn-remove-ref-img">✕ Remove</button>
             </div>
           </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 12px; padding: 10px; background: var(--bg-tertiary); border-radius: 6px; border: 1px solid var(--border-color);">
+          <label class="checkbox-container" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="check-attach-ref-image" style="margin-top: 3px;">
+            <div>
+              <strong style="color: var(--text-primary); font-size: 12px;">Attach Image to Google Flow Prompt (Image-to-Image / Variation)</strong>
+              <p class="small-hint" style="margin-top: 3px; color: var(--text-muted); font-size: 11px; line-height: 1.4;">
+                💡 <strong>Recommended Workflow:</strong> Agar aap chahte hain ke <strong>character 100% same rahe aur har scene ka background alag bane</strong>, to isse <strong>UNCHECK</strong> rakhein aur niche <strong>Option 2 (Prompt Description)</strong> use karein. Flow mein image attach karne se Flow pure image ko recreate karne lagta hai.
+              </p>
+            </div>
+          </label>
         </div>
       </div>
 

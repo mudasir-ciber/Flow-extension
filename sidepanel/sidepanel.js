@@ -489,11 +489,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     startSidePanelAudioKeepalive();
 
+    const { referenceImage = null } = await chrome.storage.local.get('referenceImage');
+
     const startRes = await sendRuntimeMessage({
       action: 'START_BATCH',
       queue: queue,
       characterAnchor: characterAnchorInput.value,
       anchorPosition: anchorPos,
+      referenceImage: referenceImage || null,
       subfolder: settingSubfolder.value.trim() || 'Flow_Batch',
       delaySeconds: parseInt(settingDelay.value, 10) || 5,
       expectedImages: parseInt(settingExpectedImages.value, 10) || 4,

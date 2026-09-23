@@ -5,6 +5,7 @@
   "description": "Bulk prompt automation, character consistency anchor, and automatic image downloader for Google Flow.",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "downloads",
     "tabs",
     "scripting",

@@ -234,89 +234,174 @@
       if (el && isVisible(el)) return el;
     }
 
-    // 2. Search buttons in all parent containers of inputEl (from inputEl up to body)
+    // 2. Search buttons in the prompt card container
     if (inputEl) {
-      const allNearbyButtons = new Set();
-      let p = inputEl.parentElement;
-      while (p && p !== document.body && p !== document.documentElement) {
-        // Collect native buttons, role="button", and Material custom elements
-        const found = p.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button, [class*="button"], [class*="btn"]');
-        for (const b of found) {
-          if (b !== inputEl && !inputEl.contains(b) && isVisible(b)) {
-            allNearbyButtons.add(b);
-          }
-        }
-        // If we've reached a container with at least 3 buttons and decent height, that's the prompt card!
-        const rect = p.getBoundingClientRect();
-        if (allNearbyButtons.size >= 3 && rect.height >= 80) {
-          break;
-        }
-        p = p.parentElement;
+      let card = inputEl.closest('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, .base-prompt-box') || inputEl.parentElement;
+      while (card && card !== document.body) {
+        const btns = Array.from(card.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button')).filter(isVisible);
+        if (btns.length >= 2) break;
+        card = card.parentElement;
       }
 
-      const buttonsList = Array.from(allNearbyButtons);
+      if (card) {
+        const allBtns = Array.from(card.querySelectorAll('button, [role="button"], md-icon-button, flow-icon-button')).filter(isVisible);
+        const inputRect = inputEl.getBoundingClientRect();
 
-      // Filter out non-generate buttons:
-      // Exclude "+ Agent", "Clear/Close (×)", Model selector ("Banana", "Veo", "Imagen", "x4")
-      const candidateButtons = buttonsList.filter(b => {
-        const text = (b.textContent || '').trim().toLowerCase();
-        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        const title = (b.getAttribute('title') || '').toLowerCase();
-
-        if (text.includes('agent') || aria.includes('agent')) return false;
-        if (text.includes('banana') || text.includes('nano') || text.includes('veo') || text.includes('imagen')) return false;
-        if (text.includes('close') || text.includes('clear') || aria.includes('close') || aria.includes('clear') || title.includes('close') || title.includes('clear')) return false;
-        return true;
-      });
-
-      // A. Look for button containing an arrow icon or SVG
-      const arrowBtn = candidateButtons.find(b => {
-        const hasSvg = !!b.querySelector('svg');
-        const matIcon = b.querySelector('mat-icon, [class*="icon"]');
-        const iconText = (matIcon?.textContent || '').trim().toLowerCase();
-        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        const title = (b.getAttribute('title') || '').toLowerCase();
-
-        return (
-          hasSvg ||
-          /arrow|send|east|forward|run|spark|play/i.test(iconText) ||
-          /arrow|generate|submit|send|run|start/i.test(aria) ||
-          /arrow|generate|submit|send|run|start/i.test(title)
-        );
-      });
-      if (arrowBtn) return arrowBtn;
-
-      // B. The arrow button is at the bottom-right corner of the prompt card (rightmost button)
-      if (candidateButtons.length > 0) {
-        candidateButtons.sort((a, b) => {
-          const ra = a.getBoundingClientRect();
-          const rb = b.getBoundingClientRect();
-          return (rb.right + rb.bottom) - (ra.right + ra.bottom);
+        // Candidates: buttons in the footer of the card (avoid top-right '×' close button)
+        const footerBtns = allBtns.filter(b => {
+          if (b === inputEl || inputEl.contains(b)) return false;
+          const r = b.getBoundingClientRect();
+          return r.top >= inputRect.top + 20 || r.bottom >= inputRect.bottom - 10;
         });
-        return candidateButtons[0];
+
+        // Filter out non-generate buttons:
+        // Exclude wide pill buttons (model selector "Nano Banana 2 🗖 x4" has width > 80px)
+        // Exclude buttons with long text (model name, aspect ratio), and close/clear buttons
+        const validCandidates = footerBtns.filter(b => {
+          const r = b.getBoundingClientRect();
+          const text = (b.textContent || '').trim().toLowerCase();
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+
+          // Reject wide pill buttons (the arrow button is circular, ~36x36px)
+          if (r.width > 70 && r.width > r.height * 1.5) return false;
+
+          // Reject buttons with long descriptive text
+          if (text.length > 4 && !/^(east|send|run|go)$/i.test(text)) return false;
+
+          // Reject agent, close, clear, aspect ratio, styles, model
+          if (/agent|close|clear|cancel|delete|reset|model|aspect|ratio|setting/i.test(text + ' ' + aria + ' ' + title)) return false;
+
+          return true;
+        });
+
+        // A. Look for button with arrow, east, send, or generate signals in aria, title, or icon
+        const arrowSignalBtn = validCandidates.find(b => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+          const matIcon = b.querySelector('mat-icon, [class*="icon"]');
+          const iconText = (matIcon?.textContent || '').trim().toLowerCase();
+          return /arrow|east|send|generate|run|submit|forward/i.test(aria + ' ' + title + ' ' + iconText);
+        });
+        if (arrowSignalBtn) return arrowSignalBtn;
+
+        // B. In Google Flow, the arrow button is the circular button at the absolute far-right edge of the prompt card
+        if (validCandidates.length > 0) {
+          validCandidates.sort((a, b) => {
+            const ra = a.getBoundingClientRect();
+            const rb = b.getBoundingClientRect();
+            return rb.right - ra.right; // maximum rightmost button
+          });
+          return validCandidates[0];
+        }
       }
     }
 
-    // 3. Fallback: Search all visible buttons in the bottom half of the window with an arrow or submit label
+    // 3. Fallback: Search all visible buttons in the bottom half of the window
     const allButtons = Array.from(document.querySelectorAll('button, [role="button"], md-icon-button')).filter(isVisible);
     const bottomButtons = allButtons.filter(b => {
       const rect = b.getBoundingClientRect();
-      return rect.top > window.innerHeight * 0.4;
+      if (rect.top <= window.innerHeight * 0.4) return false;
+      if (rect.width > 70 && rect.width > rect.height * 1.5) return false;
+      const text = (b.textContent || '').trim().toLowerCase();
+      if (text.length > 4 && !/^(east|send|run|go)$/i.test(text)) return false;
+      return true;
     });
 
     const match = bottomButtons.find(b => {
-      const text = (b.textContent || '').trim().toLowerCase();
-      if (text.includes('agent') || text.includes('banana') || text.includes('clear') || text.includes('close')) return false;
       const aria = (b.getAttribute('aria-label') || '').toLowerCase();
       const title = (b.getAttribute('title') || '').toLowerCase();
-      const hasSvg = !!b.querySelector('svg');
       const matIcon = b.querySelector('mat-icon');
       const iconText = (matIcon?.textContent || '').trim().toLowerCase();
-      return hasSvg || /arrow|send|east|forward|spark/i.test(iconText) || /start generation|generate|create|run|submit|send|arrow/i.test(aria) || /generate|create|run|submit|send/i.test(title);
+      return /arrow|send|east|forward|run|submit|generate/i.test(aria + ' ' + title + ' ' + iconText);
     });
     if (match) return match;
 
+    if (bottomButtons.length > 0) {
+      bottomButtons.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return rb.right - ra.right;
+      });
+      return bottomButtons[0];
+    }
+
     return null;
+  }
+
+  // --- CHARACTER REFERENCE IMAGE ATTACHMENT ---
+
+  function dataUrlToFile(dataUrl, filename = 'character_reference.png') {
+    try {
+      const arr = dataUrl.split(',');
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mime });
+      return new File([blob], filename, { type: mime, lastModified: Date.now() });
+    } catch (e) {
+      console.warn('[Flow AutoPrompt] dataUrlToFile conversion error:', e);
+      return null;
+    }
+  }
+
+  async function attachReferenceImage(dataUrl, inputEl) {
+    if (!dataUrl) return false;
+    const file = dataUrlToFile(dataUrl, 'character_reference.png');
+    if (!file) return false;
+
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+
+      const card = inputEl?.closest('flow-prompt-box, flow-base-prompt-box, .prompt-box-container') || inputEl?.parentElement;
+
+      // 1. Dispatch synthetic paste event with file payload directly onto inputEl & prompt card
+      const pasteEvt = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData: dt
+      });
+      if (inputEl) inputEl.dispatchEvent(pasteEvt);
+      if (card && card !== inputEl) card.dispatchEvent(pasteEvt);
+
+      // 2. Dispatch Drag & Drop events onto inputEl and prompt box containers
+      const dropTargets = [
+        inputEl,
+        card,
+        document.querySelector('flow-prompt-box, flow-base-prompt-box, .prompt-box-container, cdk-virtual-scroll-viewport, main')
+      ].filter(Boolean);
+
+      for (const target of dropTargets) {
+        try {
+          target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
+          target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
+          target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, composed: true, dataTransfer: dt }));
+        } catch (e) {}
+      }
+
+      // 3. Dispatch to any file input element present in the document
+      const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      for (const fi of fileInputs) {
+        try {
+          fi.files = dt.files;
+          fi.dispatchEvent(new Event('change', { bubbles: true }));
+          fi.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) {}
+      }
+
+      await sleep(600); // Give Flow time to process and render media chip
+      return true;
+    } catch (e) {
+      console.warn('[Flow AutoPrompt] attachReferenceImage error:', e);
+      return false;
+    }
   }
 
   // --- TEXT INJECTION & SUBMISSION ---
@@ -333,7 +418,7 @@
   async function injectTextIntoProseMirror(el, text) {
     el.focus();
     el.click();
-    await sleep(80);
+    await sleep(60);
 
     // 1. Clear previous text cleanly using Selection + execCommand
     try {
@@ -350,43 +435,32 @@
     } catch (e) {}
     await sleep(50);
 
-    // 2. Insert text via DataTransfer paste event (ProseMirror's official clipboard handler)
+    // 2. Insert text via execCommand (synchronous and handles ProseMirror natively without duplicates)
+    let inserted = false;
     try {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      const pasteEvt = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt
-      });
-      el.dispatchEvent(pasteEvt);
-    } catch (e) {}
-
-    // 3. Fallback: execCommand insertText ONLY if paste didn't populate
-    if (!el.textContent.includes(text.slice(0, 10))) {
-      try {
-        document.execCommand('insertText', false, text);
-      } catch (e) {}
+      inserted = document.execCommand('insertText', false, text);
+    } catch (e) {
+      inserted = false;
     }
 
-    // 4. Dispatch beforeinput & input events
-    try {
-      el.dispatchEvent(new InputEvent('beforeinput', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: text
-      }));
-      el.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: text
-      }));
-    } catch (e) {}
+    // 3. Fallback: DataTransfer paste event ONLY if execCommand did not populate text
+    if (!inserted || !(el.textContent || '').trim()) {
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        const pasteEvt = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clipboardData: dt
+        });
+        el.dispatchEvent(pasteEvt);
+      } catch (e) {}
+      await sleep(60);
+    }
 
-    // 5. Fallback verification: if still empty, insert paragraph
-    if (!el.textContent.includes(text.slice(0, 10))) {
+    // 4. Fallback verification: if still empty, insert paragraph
+    if (!(el.textContent || '').trim()) {
       let p = el.querySelector('p');
       if (!p) {
         p = document.createElement('p');
@@ -395,12 +469,12 @@
       p.textContent = text;
     }
 
-    // 6. Dispatch Angular change detection events
+    // 5. Dispatch Angular change detection events
     el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
 
-    await sleep(150);
+    await sleep(200);
     return (el.textContent || '').trim().length > 0;
   }
 
@@ -450,6 +524,9 @@
 
         if (innerTarget && innerTarget !== btn) {
           innerTarget.dispatchEvent(new MouseEvent('click', opts));
+          if (typeof innerTarget.click === 'function') {
+            innerTarget.click();
+          }
         }
       } catch (e) {
         console.warn('[Flow AutoPrompt] Button click error:', e);
@@ -608,7 +685,7 @@
     isDownloading = false;
     stopTracking();
 
-    const { index, prompt, rawPrompt, total, isRetry } = taskData;
+    const { index, prompt, rawPrompt, total, isRetry, referenceImage } = taskData;
 
     if (!isRetry) {
       currentRetryCount = 0;
@@ -642,19 +719,26 @@
       return;
     }
 
-    // 3. Inject prompt cleanly into ProseMirror (Sanitized of any heading labels)
+    // 3. Attach character reference image if provided
+    if (referenceImage) {
+      await addLogSW(`${sceneHeader} Attaching character reference image...`);
+      await attachReferenceImage(referenceImage, inputEl);
+      await sleep(350);
+    }
+
+    // 4. Inject prompt cleanly into ProseMirror (Sanitized of any heading labels)
     const sanitizedPrompt = cleanPromptContent(prompt) || prompt;
     await injectTextIntoProseMirror(inputEl, sanitizedPrompt);
-    await sleep(250);
+    await sleep(300);
 
-    // 4. Find generate / arrow button
+    // 5. Find generate / arrow button (specifically the circular right-arrow button)
     let btn = findGenerateButton(inputEl);
     if (!btn) {
       await sleep(200);
       btn = findGenerateButton(inputEl);
     }
 
-    // 5. Trigger generation
+    // 6. Trigger generation
     triggerGenerate(btn, inputEl);
     if (btn) {
       const btnDesc = btn.getAttribute('aria-label') || btn.className?.slice(0, 25) || btn.tagName;
@@ -663,7 +747,7 @@
       await addLogSW(`${sceneHeader} Submitted via Enter key. Monitoring generation...`);
     }
 
-    // Safety nudge after 1000ms if generation not yet detected
+    // Safety nudge after 1200ms if generation not yet detected
     setTimeout(() => {
       if (isExecuting && !isGeneratingActive()) {
         const freshBtn = findGenerateButton(inputEl) || btn;
@@ -672,9 +756,9 @@
           triggerGenerate(freshBtn, inputEl);
         }
       }
-    }, 1000);
+    }, 1200);
 
-    // 6. Start sequential tracking loop
+    // 7. Start sequential tracking loop
     startTrackingGeneration(index, prompt, rawPrompt, total);
   }
 
@@ -758,6 +842,7 @@
                 imageUrls: currentNewImages,
                 promptIndex: promptIndex,
                 promptText: promptText,
+                rawPrompt: rawPrompt,
                 subfolder: subfolder
               }, async (res) => {
                 const count = res?.count || currentNewImages.length;
@@ -830,6 +915,8 @@
                 action: 'DOWNLOAD_IMAGES',
                 imageUrls: currentNewImages,
                 promptIndex: promptIndex,
+                promptText: promptText,
+                rawPrompt: rawPrompt,
                 subfolder: subfolder
               }, () => {
                 isExecuting = false;

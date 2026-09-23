@@ -233,18 +233,28 @@ function cleanPromptContent(text) {
     .trim();
 }
 
+function extractTimestamp(text) {
+  if (!text) return null;
+  const match = text.match(/\(?\s*(\b\d{1,2}(?::\d{2})?\s*(?:to|-|—|–)\s*\d{1,2}(?::\d{2})?\b)\s*\)?/i);
+  if (match) {
+    return match[1].replace(/[:]/g, '-').trim();
+  }
+  return null;
+}
+
 function sanitizePath(str) {
   return (str || 'Flow_Batch').replace(/[<>:"/\\|?*]+/g, '_').trim();
 }
 
 // --- IMAGE DOWNLOADER VIA CHROME DOWNLOADS API (WAITS FOR DISK COMPLETION) ---
 
-async function downloadImages(imageUrls, promptIndex, customFolder) {
+async function downloadImages(imageUrls, promptIndex, customFolder, promptText, rawPrompt) {
   const { subfolder = 'Flow_Batch' } = await chrome.storage.local.get('subfolder');
   const targetFolder = sanitizePath(customFolder || subfolder);
   const promptNumberStr = String(promptIndex + 1).padStart(4, '0');
+  const timestamp = extractTimestamp(rawPrompt) || extractTimestamp(promptText);
 
-  await addLog(`⬇️ Scene #${promptIndex + 1}: Initiating download for ${imageUrls.length} image(s)...`);
+  await addLog(`⬇️ Scene #${promptIndex + 1}${timestamp ? ` (${timestamp})` : ''}: Initiating download for ${imageUrls.length} image(s)...`);
 
   const downloadPromises = imageUrls.map((url, idx) => {
     return new Promise((resolve) => {
@@ -252,7 +262,8 @@ async function downloadImages(imageUrls, promptIndex, customFolder) {
       if (url.includes('.webp') || url.includes('format=webp')) ext = 'webp';
       else if (url.includes('.jpg') || url.includes('.jpeg')) ext = 'jpg';
 
-      const filename = `${targetFolder}/Scene_${promptNumberStr}_img${idx + 1}.${ext}`;
+      const baseName = timestamp ? `${timestamp}_img${idx + 1}` : `Scene_${promptNumberStr}_img${idx + 1}`;
+      const filename = `${targetFolder}/${baseName}.${ext}`;
 
       chrome.downloads.download(
         {
@@ -367,7 +378,7 @@ async function advanceQueue() {
 
   // Delay cooldown before executing next prompt
   setTimeout(async () => {
-    const fresh = await chrome.storage.local.get(['status', 'queue', 'characterAnchor', 'anchorPosition']);
+    const fresh = await chrome.storage.local.get(['status', 'queue', 'characterAnchor', 'anchorPosition', 'referenceImage']);
     if (fresh.status !== 'running') return;
 
     const targetTab = await findFlowTab();
@@ -398,7 +409,8 @@ async function advanceQueue() {
         index: nextIndex,
         prompt: finalPrompt,
         rawPrompt: item.prompt,
-        total: fresh.queue.length
+        total: fresh.queue.length,
+        referenceImage: fresh.referenceImage || null
       }
     }, (res, err) => {
       if (err) {
@@ -459,7 +471,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
         }
 
         case 'START_BATCH': {
-          const { queue, characterAnchor, anchorPosition, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds } = message;
+          const { queue, characterAnchor, anchorPosition, referenceImage, subfolder, delaySeconds, expectedImages, maxTimeoutSeconds } = message;
 
           await chrome.storage.local.set({
             queue: queue || [],
@@ -467,6 +479,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
             status: 'running',
             characterAnchor: characterAnchor || '',
             anchorPosition: anchorPosition || 'prefix',
+            referenceImage: referenceImage || null,
             subfolder: subfolder || 'Flow_Batch',
             delaySeconds: delaySeconds || 5,
             expectedImages: expectedImages || 4,
@@ -516,7 +529,8 @@ if (chrome.runtime && chrome.runtime.onMessage) {
               index: 0,
               prompt: firstPrompt,
               rawPrompt: queue[0].prompt,
-              total: queue.length
+              total: queue.length,
+              referenceImage: referenceImage || null
             }
           });
 
@@ -537,7 +551,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
         }
 
         case 'RESUME_BATCH': {
-          const state = await chrome.storage.local.get(['queue', 'currentIndex', 'characterAnchor', 'anchorPosition']);
+          const state = await chrome.storage.local.get(['queue', 'currentIndex', 'characterAnchor', 'anchorPosition', 'referenceImage']);
           if (!state.queue || state.currentIndex >= state.queue.length) {
             sendResponse({ success: false, error: 'Queue is empty or complete' });
             return;
@@ -571,7 +585,8 @@ if (chrome.runtime && chrome.runtime.onMessage) {
               index: state.currentIndex,
               prompt: currentPrompt,
               rawPrompt: currentItem.prompt,
-              total: state.queue.length
+              total: state.queue.length,
+              referenceImage: state.referenceImage || null
             }
           });
 
@@ -592,8 +607,8 @@ if (chrome.runtime && chrome.runtime.onMessage) {
         }
 
         case 'DOWNLOAD_IMAGES': {
-          const { imageUrls, promptIndex, subfolder } = message;
-          const count = await downloadImages(imageUrls || [], promptIndex || 0, subfolder);
+          const { imageUrls, promptIndex, promptText, rawPrompt, subfolder } = message;
+          const count = await downloadImages(imageUrls || [], promptIndex || 0, subfolder, promptText, rawPrompt);
           sendResponse({ success: true, count });
           break;
         }

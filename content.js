@@ -228,29 +228,90 @@
   }
 
   function findGenerateButton(inputEl) {
-    // 1. Exact Google Flow Generate button
-    const flowBtn = document.querySelector(
-      'flow-generate-icon-button button.generate-icon-button, flow-generate-icon-button button, button[aria-label="Start generation"], button.generate-icon-button'
-    );
-    if (flowBtn) return flowBtn;
+    // 1. Direct selectors for Google Flow Generate / Arrow buttons
+    const directSelectors = [
+      'flow-generate-icon-button button.generate-icon-button',
+      'flow-generate-icon-button button',
+      'button[aria-label="Start generation"]',
+      'button[aria-label*="Start generation" i]',
+      'button.generate-icon-button',
+      'button.generate-button',
+      'button[aria-label*="Generate" i]',
+      'button[aria-label*="Submit" i]',
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="Run" i]',
+      'button[aria-label*="Arrow" i]'
+    ];
+    for (const sel of directSelectors) {
+      const el = document.querySelector(sel);
+      if (el && isVisible(el)) return el;
+    }
 
     // 2. Custom calibrated selector
     if (customSelectors.button) {
       const el = document.querySelector(customSelectors.button);
-      if (el) return el;
+      if (el && isVisible(el)) return el;
     }
 
-    // 3. Search buttons inside prompt box container
+    // 3. Search inside the enclosing prompt card / container
     if (inputEl) {
-      const container = inputEl.closest('flow-base-prompt-box') || inputEl.closest('.prompt-box-container') || inputEl.parentElement;
+      let container = inputEl.closest('flow-base-prompt-box, flow-prompt-box, .prompt-box-container, .base-prompt-box, form');
+      if (!container) {
+        let p = inputEl.parentElement;
+        while (p && p !== document.body) {
+          const btns = p.querySelectorAll('button, div[role="button"]');
+          if (btns.length >= 1) {
+            container = p;
+            break;
+          }
+          p = p.parentElement;
+        }
+      }
+
       if (container) {
-        const btn = container.querySelector('flow-generate-icon-button button, button[aria-label="Start generation"], button[type="submit"]');
-        if (btn) return btn;
+        const containerButtons = Array.from(container.querySelectorAll('button, div[role="button"]'));
+
+        // A. Look for button containing an arrow icon or SVG
+        const arrowBtn = containerButtons.find(b => {
+          if (!isVisible(b)) return false;
+          const text = (b.textContent || '').trim().toLowerCase();
+          if (text.includes('agent') || text.includes('clear') || text.includes('close')) return false;
+
+          const hasSvg = !!b.querySelector('svg');
+          const matIcon = b.querySelector('mat-icon, [class*="icon"]');
+          const iconText = (matIcon?.textContent || '').trim().toLowerCase();
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const title = (b.getAttribute('title') || '').toLowerCase();
+
+          return (
+            hasSvg ||
+            /arrow|send|east|forward|run|spark|play/i.test(iconText) ||
+            /arrow|generate|submit|send|run/i.test(aria) ||
+            /arrow|generate|submit|send|run/i.test(title)
+          );
+        });
+        if (arrowBtn) return arrowBtn;
+
+        // B. The arrow button is at the bottom-right of the prompt card (rightmost button)
+        const candidates = containerButtons.filter(b => {
+          if (!isVisible(b)) return false;
+          const text = (b.textContent || '').trim().toLowerCase();
+          return !text.includes('agent') && !text.includes('clear') && !text.includes('close');
+        });
+
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => {
+            const ra = a.getBoundingClientRect();
+            const rb = b.getBoundingClientRect();
+            return (rb.left + rb.top) - (ra.left + ra.top);
+          });
+          return candidates[0];
+        }
       }
     }
 
-    // 4. Search by aria-label / title
-    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+    // 4. Global Search by aria-label / title across visible buttons
+    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]')).filter(isVisible);
     const ariaMatch = buttons.find(b => {
       const label = (b.getAttribute('aria-label') || '').toLowerCase();
       const title = (b.getAttribute('title') || '').toLowerCase();
@@ -344,7 +405,7 @@
     return (el.textContent || '').trim().length > 0;
   }
 
-  // Trigger Generation: Strictly ONE single trigger (Button click, or Enter fallback)
+  // Trigger Generation: Click Generate / Arrow Button with complete event sequence + Enter fallback
   function triggerGenerate(btn, inputEl) {
     if (hasSubmittedPrompt) {
       console.log('[Flow AutoPrompt] Already submitted this prompt, skipping duplicate trigger.');
@@ -352,28 +413,35 @@
     }
     hasSubmittedPrompt = true;
 
-    // Primary: Click Generate Button ONCE
+    // Primary: Click Generate / Arrow Button with full pointer & mouse events
     if (btn) {
-      btn.removeAttribute('disabled');
-      btn.disabled = false;
-      btn.classList.remove('mat-mdc-button-disabled');
-      btn.removeAttribute('aria-disabled');
-      btn.focus();
-      btn.click();
-      return;
+      try {
+        btn.removeAttribute('disabled');
+        btn.disabled = false;
+        btn.classList.remove('mat-mdc-button-disabled', 'disabled');
+        btn.removeAttribute('aria-disabled');
+        btn.focus();
+
+        const opts = { bubbles: true, cancelable: true, view: window, composed: true };
+        btn.dispatchEvent(new PointerEvent('pointerdown', opts));
+        btn.dispatchEvent(new MouseEvent('mousedown', opts));
+        btn.dispatchEvent(new PointerEvent('pointerup', opts));
+        btn.dispatchEvent(new MouseEvent('mouseup', opts));
+        btn.click();
+      } catch (e) {
+        console.warn('[Flow AutoPrompt] Button click error:', e);
+        try { btn.click(); } catch(e2) {}
+      }
     }
 
-    // Fallback ONLY if button was not found: Dispatch Enter key ONCE
+    // Complementary keyboard trigger (Ctrl+Enter / Enter on input)
     if (inputEl) {
-      inputEl.focus();
-      inputEl.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      }));
+      try {
+        inputEl.focus();
+        const kOpts = { bubbles: true, cancelable: true, view: window, composed: true };
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, ...kOpts }));
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ...kOpts }));
+      } catch (e) {}
     }
   }
 
@@ -552,12 +620,32 @@
     await injectTextIntoProseMirror(inputEl, sanitizedPrompt);
     await sleep(250);
 
-    // 4. Find generate button
+    // 4. Find generate / arrow button
     let btn = findGenerateButton(inputEl);
+    if (!btn) {
+      await sleep(200);
+      btn = findGenerateButton(inputEl);
+    }
 
-    // 5. Trigger generation ONCE (Strictly 1 native click)
+    // 5. Trigger generation
     triggerGenerate(btn, inputEl);
-    await addLogSW(`${sceneHeader} Generate clicked ONCE. Monitoring generation progress...`);
+    if (btn) {
+      const btnDesc = btn.getAttribute('aria-label') || btn.className?.slice(0, 25) || btn.tagName;
+      await addLogSW(`${sceneHeader} Arrow button clicked (${btnDesc}). Monitoring generation...`);
+    } else {
+      await addLogSW(`${sceneHeader} Submitted via Enter key. Monitoring generation...`);
+    }
+
+    // Safety nudge after 1000ms if generation not yet detected
+    setTimeout(() => {
+      if (isExecuting && !isGeneratingActive()) {
+        const freshBtn = findGenerateButton(inputEl) || btn;
+        if (freshBtn) {
+          hasSubmittedPrompt = false;
+          triggerGenerate(freshBtn, inputEl);
+        }
+      }
+    }, 1000);
 
     // 6. Start sequential tracking loop
     startTrackingGeneration(index, prompt, rawPrompt, total);

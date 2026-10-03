@@ -11,7 +11,8 @@
     "scripting",
     "alarms",
     "sidePanel",
-    "notifications"
+    "notifications",
+    "debugger"
   ],
   "host_permissions": [
     "https://flow.google/*",
@@ -24,7 +25,13 @@
     "service_worker": "service-worker.js"
   },
   "action": {
-    "default_title": "AMJAD'S FLOW EXTENSION"
+    "default_title": "AMJAD'S FLOW EXTENSION",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "side_panel": {
     "default_path": "sidepanel/sidepanel.html"
@@ -56,7 +63,18 @@
   ],
   "icons": {
     "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
-    "128": "icons/icon-128.png"
-  }
+    "128": "icons/icon-128.png",
+    "256": "icons/icon-256.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*",
+        "favicon.ico"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

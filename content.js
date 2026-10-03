@@ -408,8 +408,10 @@
     } catch (e) {}
     await sleep(50);
 
-    // 2. Primary: Dispatch ClipboardEvent ('paste') with DataTransfer
-    // ProseMirror handles paste natively by updating internal state and firing document transactions
+    // 2. Dispatch event to MAIN WORLD bridge via postMessage & document event
+    sendToMainWorld('INJECT_PROMPT', { prompt: text });
+
+    // 3. Primary fallback in Isolated World: Dispatch ClipboardEvent ('paste') with properly defined DataTransfer
     let pasted = false;
     try {
       const dt = new DataTransfer();
@@ -417,23 +419,23 @@
       const pasteEvt = new ClipboardEvent('paste', {
         bubbles: true,
         cancelable: true,
-        composed: true,
-        clipboardData: dt
+        composed: true
       });
+      Object.defineProperty(pasteEvt, 'clipboardData', { value: dt, writable: false, configurable: true });
       el.dispatchEvent(pasteEvt);
       pasted = (el.textContent || '').trim().length > 0;
     } catch (e) {
       pasted = false;
     }
 
-    // 3. Fallback: execCommand insertText if paste did not populate text
+    // 4. Fallback: execCommand insertText
     if (!pasted || !(el.textContent || '').trim()) {
       try {
         document.execCommand('insertText', false, text);
       } catch (e) {}
     }
 
-    // 4. Fallback verification: if still empty, insert paragraph
+    // 5. Fallback verification: if still empty, insert paragraph
     if (!(el.textContent || '').trim()) {
       let p = el.querySelector('p');
       if (!p) {
@@ -443,29 +445,32 @@
       p.textContent = text;
     }
 
-    // 5. Dispatch InputEvent & Angular change detection events
+    // 6. Dispatch InputEvents & Angular change detection events
     try {
-      el.dispatchEvent(new InputEvent('beforeinput', {
+      const bi = new InputEvent('beforeinput', {
         bubbles: true,
         cancelable: true,
         composed: true,
         inputType: 'insertText',
         data: text
-      }));
-      el.dispatchEvent(new InputEvent('input', {
+      });
+      el.dispatchEvent(bi);
+
+      const inEvt = new InputEvent('input', {
         bubbles: true,
         cancelable: true,
         composed: true,
         inputType: 'insertText',
         data: text
-      }));
+      });
+      el.dispatchEvent(inEvt);
     } catch (e) {}
 
     el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     el.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
 
-    // 6. Proactively unlock generate button if Angular left it in disabled state
+    // 7. Unlock generate button if Angular left it in disabled state
     const genBtn = findGenerateButton(el);
     if (genBtn) {
       try {
@@ -480,7 +485,67 @@
     return (el.textContent || '').trim().length > 0;
   }
 
-  // Trigger Generation: Click Generate / Arrow Button with complete event sequence + form submit + Enter fallback
+  // Cross-world message helper (Isolated -> Main world via standard window.postMessage & document event)
+  function sendToMainWorld(action, payload = {}) {
+    try {
+      window.postMessage({
+        source: 'AMJAD_FLOW_ISOLATED',
+        action: action,
+        ...payload
+      }, '*');
+    } catch (e) {}
+    try {
+      document.dispatchEvent(new CustomEvent('__FLOW_MAIN_' + action, {
+        detail: payload
+      }));
+    } catch (e) {}
+  }
+
+  function createEnterKeyEvent(type) {
+    const evt = new KeyboardEvent(type, {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      charCode: type === 'keypress' ? 13 : 0,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      repeat: false
+    });
+    try { Object.defineProperty(evt, 'keyCode', { value: 13, configurable: true }); } catch (e) {}
+    try { Object.defineProperty(evt, 'which', { value: 13, configurable: true }); } catch (e) {}
+    try { Object.defineProperty(evt, 'charCode', { value: type === 'keypress' ? 13 : 0, configurable: true }); } catch (e) {}
+    return evt;
+  }
+
+  // Wait for Angular to naturally enable the generate button after text input
+  async function waitForButtonEnabled(inputEl, maxWaitMs = 800) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      const btn = findGenerateButton(inputEl);
+      if (btn) {
+        const isDisabledAttr = btn.hasAttribute('disabled') && btn.getAttribute('disabled') !== 'false';
+        const isPropDisabled = btn.disabled === true;
+        const hasDisabledClass = btn.classList.contains('mat-mdc-button-disabled') || btn.classList.contains('disabled');
+        const isAriaDisabled = btn.getAttribute('aria-disabled') === 'true';
+
+        if (!isDisabledAttr && !isPropDisabled && !hasDisabledClass && !isAriaDisabled) {
+          console.log(`[Flow AutoPrompt] Generate button enabled naturally in ${Date.now() - start}ms!`);
+          return btn;
+        }
+      }
+      await sleep(50);
+    }
+    return findGenerateButton(inputEl);
+  }
+
+  // Trigger Generation: Hardware CDP Enter + CDP Click + Main World execution + DOM events
   function triggerGenerate(btn, inputEl) {
     if (hasSubmittedPrompt) {
       console.log('[Flow AutoPrompt] Already submitted this prompt, skipping duplicate trigger.');
@@ -488,15 +553,54 @@
     }
     hasSubmittedPrompt = true;
 
-    // 1. Force enable button if disabled & click with full pointer & mouse events
+    // 1. Focus input element and place cursor at end of text
+    if (inputEl) {
+      try {
+        inputEl.focus();
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(inputEl);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+    }
+
+    // 2. Compute exact button screen coordinates if button exists
+    let coords = null;
+    if (btn) {
+      try {
+        const rect = btn.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          coords = {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2)
+          };
+        }
+      } catch (e) {}
+    }
+
+    // 3. PRIMARY SUBMISSION: Call Service Worker to dispatch Native Hardware Enter & Click via chrome.debugger (isTrusted: true)
+    console.log('[Flow AutoPrompt] Invoking DISPATCH_NATIVE_SUBMIT via chrome.debugger CDP...', coords);
+    safeSend({
+      action: 'DISPATCH_NATIVE_SUBMIT',
+      coords: coords
+    }, (res, err) => {
+      console.log('[Flow AutoPrompt] DISPATCH_NATIVE_SUBMIT response:', res, err);
+    });
+
+    // 4. Signal Main World bridge to trigger Angular submission & ProseMirror keymap directly
+    sendToMainWorld('TRIGGER_SUBMIT');
+
+    // 5. Force enable button if disabled & click with full pointer & mouse events
     if (btn) {
       try {
         btn.removeAttribute('disabled');
         btn.disabled = false;
         btn.classList.remove('mat-mdc-button-disabled', 'disabled');
         btn.removeAttribute('aria-disabled');
+        btn.setAttribute('aria-disabled', 'false');
         btn.setAttribute('tabindex', '0');
-        btn.focus();
 
         const rect = btn.getBoundingClientRect();
         const clientX = rect.left > 0 ? (rect.left + rect.width / 2) : 100;
@@ -514,25 +618,20 @@
           buttons: 1
         };
 
-        const innerTarget = btn.querySelector('mat-icon, svg, span, button') || btn;
+        const host = btn.closest('flow-generate-icon-button');
+        const innerIcon = btn.querySelector('mat-icon, svg, [class*="icon"]');
+        const touchTarget = btn.querySelector('.mat-mdc-button-touch-target');
 
-        btn.dispatchEvent(new PointerEvent('pointerdown', opts));
-        btn.dispatchEvent(new MouseEvent('mousedown', opts));
-        btn.dispatchEvent(new PointerEvent('pointerup', opts));
-        btn.dispatchEvent(new MouseEvent('mouseup', opts));
-        btn.dispatchEvent(new MouseEvent('click', opts));
-        if (typeof btn.click === 'function') {
-          btn.click();
-        }
+        const targets = [btn, innerIcon, touchTarget, host].filter(Boolean);
 
-        if (innerTarget && innerTarget !== btn) {
-          innerTarget.dispatchEvent(new PointerEvent('pointerdown', opts));
-          innerTarget.dispatchEvent(new MouseEvent('mousedown', opts));
-          innerTarget.dispatchEvent(new PointerEvent('pointerup', opts));
-          innerTarget.dispatchEvent(new MouseEvent('mouseup', opts));
-          innerTarget.dispatchEvent(new MouseEvent('click', opts));
-          if (typeof innerTarget.click === 'function') {
-            innerTarget.click();
+        for (const t of targets) {
+          t.dispatchEvent(new PointerEvent('pointerdown', opts));
+          t.dispatchEvent(new MouseEvent('mousedown', opts));
+          t.dispatchEvent(new PointerEvent('pointerup', opts));
+          t.dispatchEvent(new MouseEvent('mouseup', opts));
+          t.dispatchEvent(new MouseEvent('click', opts));
+          if (typeof t.click === 'function') {
+            t.click();
           }
         }
       } catch (e) {
@@ -541,7 +640,7 @@
       }
     }
 
-    // 2. Submit parent form directly if present (native HTML form submission triggers Angular ngSubmit)
+    // 6. Submit parent form directly if present (native HTML form submission triggers Angular ngSubmit)
     const form = btn?.closest('form') || inputEl?.closest('form') || document.querySelector('flow-prompt-box form, flow-base-prompt-box form, .prompt-box-container form');
     if (form) {
       try {
@@ -557,24 +656,27 @@
       }
     }
 
-    // 3. Dispatch Enter key sequence directly on inputEl (ProseMirror & Flow keyboard trigger)
+    // 7. Dispatch Enter key sequence directly on inputEl, paragraph, activeElement, document, window
     if (inputEl) {
       try {
-        inputEl.focus();
-        const enterOpts = {
-          key: 'Enter',
-          code: 'Enter',
-          keyCode: 13,
-          which: 13,
-          charCode: 13,
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window
-        };
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', enterOpts));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+        const enterTargets = [
+          inputEl,
+          inputEl.querySelector('p'),
+          document.activeElement,
+          inputEl.closest('flow-rich-text-editor'),
+          inputEl.closest('flow-base-prompt-box'),
+          inputEl.closest('flow-prompt-box'),
+          document,
+          window
+        ].filter(Boolean);
+
+        for (const t of enterTargets) {
+          try {
+            t.dispatchEvent(createEnterKeyEvent('keydown'));
+            t.dispatchEvent(createEnterKeyEvent('keypress'));
+            t.dispatchEvent(createEnterKeyEvent('keyup'));
+          } catch (e) {}
+        }
       } catch (e) {}
     }
   }
@@ -729,14 +831,74 @@
 
   // --- AUTOMATION RUNNER ---
 
+  function extractTimestampInfo(text) {
+    if (!text) return null;
+    const timePattern = '(?:\\d{1,2}:)?\\d{1,2}:\\d{2}';
+    const regex = new RegExp(`(?:\\[|\\()?#?\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:to|-|—|–)\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:\\]|\\))?`, 'i');
+    const match = text.match(regex);
+    if (match) {
+      const start = match[1];
+      const end = match[2];
+      return {
+        display: `(${start}) to (${end})`,
+        fileSafe: `(${start.replace(/:/g, '-')}) to (${end.replace(/:/g, '-')})`,
+        start,
+        end
+      };
+    }
+    return null;
+  }
+
+  function extractSceneNumber(text, defaultIndex = 0) {
+    if (text) {
+      const match = text.match(/(?:^|\n)\s*(?:#|\*|_|\[|\()?\s*scene\s*#?\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+    }
+    return defaultIndex + 1;
+  }
+
   function cleanPromptContent(text) {
     if (!text) return '';
-    return text
-      .replace(/^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)(?:\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z]))?\s*[:\-\—\–]\s*/i, '')
-      .replace(/^(?:\[|\()?#?\s*\d{1,2}(?::\d{2})?\s*(?:to|-|—|–)\s*#?\d{1,2}(?::\d{2})?\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i, '')
-      .replace(/^(?:\[|\()?#?\d+[\.\)\-:\—\–\]]\s*/, '')
-      .replace(/^["']|["']$/g, '')
-      .trim();
+    let cleaned = text.trim();
+
+    // 1. If text contains an explicit 'IMAGE PROMPT:' section, extract everything under it
+    const imgPromptMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]?\s*(?:\*{1,2}|_{1,2}|\])?\s*[\r\n]+([\s\S]+)$/i);
+    if (imgPromptMatch && imgPromptMatch[1].trim()) {
+      return imgPromptMatch[1].trim();
+    }
+
+    // Also check inline 'IMAGE PROMPT: ...'
+    const inlineImgMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]\s*(?:\*{1,2}|_{1,2}|\])?\s*([^\r\n][\s\S]*)$/i);
+    if (inlineImgMatch && inlineImgMatch[1].trim()) {
+      return inlineImgMatch[1].trim();
+    }
+
+    // 2. Timestamp regex literal
+    const timeRegex = /^[\[\(]?#?\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*(?:to|-|—|–)\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*[\]\)]?\s*[:\-\—\–]?\s*/i;
+
+    // 3. Scene heading regex (must have a number or word-number, e.g. 'Scene 1', '[Scene 1]', not pure [SCENE])
+    const headingRegex = /^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z])\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i;
+
+    // 4. Numbered list item prefix (e.g. 1., 2), #1 - but NOT timestamps like 0:00)
+    const numberRegex = /^(?:\[|\()?#?\d+[\.\)\-:\—\–\]](?!\d{2}\b)\s*/;
+
+    // 5. Sentence / Voiceover / Narration line regex
+    const sentenceRegex = /^(?:sentence|voiceover|narration|script|dialogue)\s*[:\-\—\–]\s*(?:["'“”][^"“”\r\n]+["'“”]|[^\r\n]+)\s*/i;
+
+    // Strip repeatedly in any order (e.g. Scene 1 -> (0:00) to (0:08) -> Sentence: "..." -> prompt)
+    for (let round = 0; round < 3; round++) {
+      cleaned = cleaned
+        .replace(timeRegex, '')
+        .replace(headingRegex, '')
+        .replace(numberRegex, '')
+        .replace(sentenceRegex, '')
+        .trim();
+    }
+
+    // Trim leading/trailing quotes and punctuation
+    cleaned = cleaned.replace(/^["'\s:\-\—\–]+/, '').replace(/["'\s]+$/, '').trim();
+
+    return cleaned;
   }
 
   async function executePrompt(taskData) {
@@ -756,7 +918,10 @@
       currentRetryCount = 0;
     }
 
-    const sceneHeader = `[Scene #${index + 1}/${total}]`;
+    const textForInfo = rawPrompt || prompt || '';
+    const sceneNum = extractSceneNumber(textForInfo, index);
+    const tsInfo = extractTimestampInfo(textForInfo);
+    const sceneHeader = tsInfo ? `[Scene ${sceneNum}: ${tsInfo.display}]` : `[Scene #${sceneNum}/${total}]`;
     await addLogSW(`${sceneHeader} ${isRetry ? `(Retry #${currentRetryCount}) ` : ''}Injecting prompt into Flow...`);
 
     // 1. Snapshot existing media & existing error tiles
@@ -794,29 +959,24 @@
     // 4. Inject prompt cleanly into ProseMirror (Sanitized of any heading labels)
     const sanitizedPrompt = cleanPromptContent(prompt) || prompt;
     await injectTextIntoProseMirror(inputEl, sanitizedPrompt);
-    await sleep(250);
 
-    // 5. Find generate / arrow button (specifically the circular right-arrow button)
-    let btn = findGenerateButton(inputEl);
-    if (!btn) {
-      await sleep(150);
-      btn = findGenerateButton(inputEl);
-    }
+    // 5. Wait for Angular to enable the generate button naturally
+    let btn = await waitForButtonEnabled(inputEl, 600);
 
     // 6. Trigger generation
     triggerGenerate(btn, inputEl);
     if (btn) {
       const btnDesc = btn.getAttribute('aria-label') || btn.className?.slice(0, 25) || btn.tagName;
-      await addLogSW(`${sceneHeader} Arrow button clicked (${btnDesc}). Starting generation...`);
+      await addLogSW(`${sceneHeader} Submit triggered on button (${btnDesc}). Starting generation...`);
     } else {
       await addLogSW(`${sceneHeader} Submitted via Enter / Form Submit. Starting generation...`);
     }
 
-    // Safety nudges: if generation not yet detected, re-trigger at 600ms, 1400ms, and 2500ms
-    [600, 1400, 2500].forEach((delay) => {
-      setTimeout(() => {
+    // Safety nudges: if generation not yet detected, re-trigger at 700ms, 1600ms, and 3000ms
+    [700, 1600, 3000].forEach((delay) => {
+      setTimeout(async () => {
         if (isExecuting && !isGeneratingActive()) {
-          const freshBtn = findGenerateButton(inputEl) || btn;
+          const freshBtn = (await waitForButtonEnabled(inputEl, 300)) || findGenerateButton(inputEl) || btn;
           hasSubmittedPrompt = false;
           triggerGenerate(freshBtn, inputEl);
         }
@@ -832,6 +992,11 @@
     let stableCount = 0;
     let lastFoundImages = [];
     let lastReportedSec = 0;
+
+    const textForInfo = rawPrompt || promptText || '';
+    const sceneNum = extractSceneNumber(textForInfo, promptIndex);
+    const tsInfo = extractTimestampInfo(textForInfo);
+    const sceneLabel = tsInfo ? `Scene ${sceneNum}: ${tsInfo.display}` : `Scene #${sceneNum}`;
 
     chrome.storage.local.get(['maxTimeoutSeconds', 'expectedImages', 'subfolder'], (settings) => {
       const timeoutSec = (settings.maxTimeoutSeconds || 120) * 1000;
@@ -860,7 +1025,7 @@
           // Periodic tracking log every 5 seconds
           if (elapsedSec >= lastReportedSec + 5) {
             lastReportedSec = elapsedSec;
-            await addLogSW(`[Scene #${promptIndex + 1}] Monitoring: ${currentNewImages.length}/${expectedImages} image(s) visible (${errorTiles.length} failed) | ${elapsedSec}s elapsed`);
+            await addLogSW(`[${sceneLabel}] Monitoring: ${currentNewImages.length}/${expectedImages} image(s) visible (${errorTiles.length} failed) | ${elapsedSec}s elapsed`);
           }
 
           // Track image count stability
@@ -874,11 +1039,6 @@
           }
 
           // --- 2. SUCCESS PATH: WHEN TO PROCEED TO DOWNLOAD ---
-          // Rule: DO NOT download prematurely on just 1 image!
-          // We MUST wait until:
-          // A. All expected images (e.g. 4) are generated AND completely visible & rendered in DOM.
-          // B. All slots resolved (e.g. 2 succeeded + 2 failed error tiles >= expectedImages) AND rendered.
-          // C. Extended grace period: If some images failed silently, wait AT LEAST 25s + 6s of stable state with no active generating spinners.
           if (currentNewImages.length > 0 && !isDownloading && imagesFullyLoaded) {
             const reachedTarget = currentNewImages.length >= expectedImages;
             const allSlotsResolved = totalResolved >= expectedImages;
@@ -897,9 +1057,9 @@
               const downloadTargets = currentNewImages.slice(0, expectedImages);
               const failedCount = Math.max(0, expectedImages - downloadTargets.length);
               if (failedCount > 0) {
-                await addLogSW(`✅ Scene #${promptIndex + 1}: ${downloadTargets.length} of ${expectedImages} image(s) completely visible (${failedCount} failed). Starting download...`);
+                await addLogSW(`✅ ${sceneLabel}: ${downloadTargets.length} of ${expectedImages} image(s) completely visible (${failedCount} failed). Starting download...`);
               } else {
-                await addLogSW(`✅ Scene #${promptIndex + 1}: All ${downloadTargets.length} target image(s) completely visible! Starting download...`);
+                await addLogSW(`✅ ${sceneLabel}: All ${downloadTargets.length} target image(s) completely visible! Starting download...`);
               }
 
               // Send download request to background service worker (waits until files are completely written to disk)
@@ -913,7 +1073,7 @@
                 expectedImages: expectedImages
               }, async (res) => {
                 const count = res?.count || downloadTargets.length;
-                await addLogSW(`💾 Scene #${promptIndex + 1}: All ${count} image(s) completely downloaded to disk! Moving to next scene...`);
+                await addLogSW(`💾 ${sceneLabel}: All ${count} image(s) completely downloaded to disk! Moving to next scene...`);
 
                 isExecuting = false;
 
@@ -929,8 +1089,6 @@
           }
 
           // --- 3. TOTAL FAILURE PATH: ONLY WHEN ALL IMAGES FAIL (0 SUCCESSES) ---
-          // Rule: "phele proper jaiza lena hai ke total images hi generation fail ho gaye hai... bhut tezi se repeat nahi karna"
-          // Condition: Exactly ZERO images generated, generation stopped, error tiles present, and elapsed > 10s
           if (currentNewImages.length === 0 && !isStillGenerating && elapsed > 10000 && errorTiles.length > 0) {
             stopTracking();
 
@@ -945,7 +1103,7 @@
 
             currentRetryCount++;
             if (currentRetryCount <= MAX_RETRIES) {
-              await addLogSW(`⚠️ Scene #${promptIndex + 1}: All images failed to generate (0/${expectedImages}). Calmly waiting 8s before retrying SAME prompt... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
+              await addLogSW(`⚠️ ${sceneLabel}: All images failed to generate (0/${expectedImages}). Calmly waiting 8s before retrying SAME prompt... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
               await sleep(8000);
 
               // Re-run SAME prompt calmly
@@ -959,7 +1117,7 @@
               });
               return;
             } else {
-              await addLogSW(`❌ Scene #${promptIndex + 1} completely failed after ${MAX_RETRIES} attempts. Advancing to next prompt.`);
+              await addLogSW(`❌ ${sceneLabel} completely failed after ${MAX_RETRIES} attempts. Advancing to next prompt.`);
               isExecuting = false;
               safeSend({
                 action: 'PROMPT_ERROR',
@@ -977,7 +1135,7 @@
             if (currentNewImages.length > 0) {
               // Partial success on timeout - download what was generated!
               isDownloading = true;
-              await addLogSW(`⚠️ Scene #${promptIndex + 1} timeout reached. Downloading ${currentNewImages.length} generated image(s)...`);
+              await addLogSW(`⚠️ ${sceneLabel} timeout reached. Downloading ${currentNewImages.length} generated image(s)...`);
               safeSend({
                 action: 'DOWNLOAD_IMAGES',
                 imageUrls: currentNewImages,
@@ -999,7 +1157,7 @@
             // Timeout with 0 images
             currentRetryCount++;
             if (currentRetryCount <= MAX_RETRIES) {
-              await addLogSW(`⚠️ Scene #${promptIndex + 1} timed out with 0 images. Calmly waiting 8s before retry... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
+              await addLogSW(`⚠️ ${sceneLabel} timed out with 0 images. Calmly waiting 8s before retry... (Attempt ${currentRetryCount}/${MAX_RETRIES})`);
               await sleep(8000);
               isExecuting = false;
               executePrompt({
@@ -1010,7 +1168,7 @@
                 isRetry: true
               });
             } else {
-              await addLogSW(`❌ Scene #${promptIndex + 1} timed out after ${MAX_RETRIES} attempts.`);
+              await addLogSW(`❌ ${sceneLabel} timed out after ${MAX_RETRIES} attempts.`);
               isExecuting = false;
               safeSend({
                 action: 'PROMPT_ERROR',

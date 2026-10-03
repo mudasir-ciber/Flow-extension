@@ -1,6 +1,18 @@
 // AMJAD'S FLOW EXTENSION - Side Panel Logic
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Ensure favicon is explicitly set for OS window manager & Windows taskbar
+  try {
+    const icon128 = chrome.runtime.getURL('icons/icon-128.png');
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = icon128;
+  } catch (e) {}
+
   // Safe runtime message helper
   function sendRuntimeMessage(message) {
     return new Promise((resolve) => {
@@ -69,7 +81,131 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingDelay = document.getElementById('setting-delay');
   const settingExpectedImages = document.getElementById('setting-expected-images');
   const settingTimeout = document.getElementById('setting-timeout');
+  const settingLaunchMode = document.getElementById('setting-launch-mode');
+  const checkKeepOnTop = document.getElementById('check-keep-on-top');
   const btnSaveSettings = document.getElementById('btn-save-settings');
+
+  // Window Header Controls (Always on Top PiP, Split Dock, Popout & Minimize)
+  const btnPinPip = document.getElementById('btn-pin-pip');
+  const btnDockSplit = document.getElementById('btn-dock-split');
+  const btnPopoutWindow = document.getElementById('btn-popout-window');
+  const btnMinimizeWindow = document.getElementById('btn-minimize-window');
+
+  // Track window restore on user focus
+  window.addEventListener('focus', () => {
+    sendRuntimeMessage({ action: 'USER_RESTORED' });
+  });
+
+  // 1. Always On Top (Document Picture-in-Picture)
+  let activePipWindow = null;
+
+  if (btnPinPip) {
+    if (!('documentPictureInPicture' in window)) {
+      btnPinPip.title = 'Document Picture-in-Picture not supported in this browser';
+    }
+
+    btnPinPip.addEventListener('click', async () => {
+      if (activePipWindow) {
+        try { activePipWindow.close(); } catch (e) {}
+        activePipWindow = null;
+        btnPinPip.classList.remove('active');
+        return;
+      }
+
+      if (!('documentPictureInPicture' in window)) {
+        alert('Document Picture-in-Picture is not supported in this browser version. Use the Split-Screen button (🗖) instead.');
+        return;
+      }
+
+      try {
+        const pipWin = await window.documentPictureInPicture.requestWindow({
+          width: 480,
+          height: 820
+        });
+        activePipWindow = pipWin;
+
+        // Copy all stylesheets to PiP window
+        [...document.styleSheets].forEach((styleSheet) => {
+          try {
+            const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+            const style = document.createElement('style');
+            style.textContent = cssRules;
+            pipWin.document.head.appendChild(style);
+          } catch (e) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.type = styleSheet.type || 'text/css';
+            link.href = styleSheet.href;
+            pipWin.document.head.appendChild(link);
+          }
+        });
+
+        // Copy theme
+        pipWin.document.body.className = document.body.className;
+
+        // Move the whole app container into the PiP window
+        const appContainer = document.querySelector('.app-container');
+        pipWin.document.body.appendChild(appContainer);
+        pipWin.document.title = "AMJAD'S FLOW EXTENSION (Always On Top)";
+
+        btnPinPip.classList.add('active');
+
+        // Restore back to original document on PiP close
+        pipWin.addEventListener('pagehide', () => {
+          document.body.appendChild(appContainer);
+          activePipWindow = null;
+          btnPinPip.classList.remove('active');
+        });
+      } catch (err) {
+        console.error('[Flow PiP] Error opening Picture-in-Picture:', err);
+      }
+    });
+  }
+
+  // 2. Side-by-Side Split Screen (Dock Chrome on Left, Extension on Right)
+  if (btnDockSplit) {
+    btnDockSplit.addEventListener('click', async () => {
+      const screenInfo = {
+        availWidth: window.screen ? window.screen.availWidth : 1920,
+        availHeight: window.screen ? window.screen.availHeight : 1080
+      };
+      await sendRuntimeMessage({ action: 'DOCK_SPLIT_SCREEN', screen: screenInfo });
+    });
+  }
+
+  // 3. Detect whether running in standalone popup window or Chrome side panel
+  if (chrome.windows && chrome.windows.getCurrent) {
+    chrome.windows.getCurrent((curWin) => {
+      if (curWin && curWin.type === 'popup') {
+        document.body.classList.add('is-standalone-window');
+        if (btnPopoutWindow) btnPopoutWindow.style.display = 'none';
+        if (btnMinimizeWindow) btnMinimizeWindow.style.display = 'inline-flex';
+      } else {
+        document.body.classList.remove('is-standalone-window');
+        if (btnPopoutWindow) btnPopoutWindow.style.display = 'inline-flex';
+        if (btnMinimizeWindow) btnMinimizeWindow.style.display = 'none';
+      }
+    });
+  }
+
+  if (btnPopoutWindow) {
+    btnPopoutWindow.addEventListener('click', async () => {
+      await sendRuntimeMessage({ action: 'OPEN_APP_WINDOW' });
+    });
+  }
+
+  if (btnMinimizeWindow) {
+    btnMinimizeWindow.addEventListener('click', () => {
+      sendRuntimeMessage({ action: 'USER_MINIMIZED' });
+      if (chrome.windows && chrome.windows.getCurrent) {
+        chrome.windows.getCurrent((curWin) => {
+          if (curWin && curWin.id) {
+            chrome.windows.update(curWin.id, { state: 'minimized' });
+          }
+        });
+      }
+    });
+  }
 
   // HOME Target Count & CHARACTER Attach Checkbox Elements
   const countPillBtns = document.querySelectorAll('.count-pill-btn');
@@ -149,12 +285,93 @@ document.addEventListener('DOMContentLoaded', async () => {
     'i'
   );
 
-  // Matches inline numbered list prefix (e.g. "1. ...", "2) ...", "[3] ...")
-  const INLINE_NUMBER_PREFIX_REGEX = /^(?:\[|\()?#?\d+[\.\)\-:\—\–\]]\s*/;
+  function extractTimestampInfo(text) {
+    if (!text) return null;
+    const timePattern = '(?:\\d{1,2}:)?\\d{1,2}:\\d{2}';
+    const regex = new RegExp(`(?:\\[|\\()?#?\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:to|-|—|–)\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:\\]|\\))?`, 'i');
+    const match = text.match(regex);
+    if (match) {
+      const start = match[1];
+      const end = match[2];
+      return {
+        display: `(${start}) to (${end})`,
+        fileSafe: `(${start.replace(/:/g, '-')}) to (${end.replace(/:/g, '-')})`,
+        start,
+        end
+      };
+    }
+    return null;
+  }
+
+  function extractSceneNumber(text, defaultIndex = 0) {
+    if (text) {
+      const match = text.match(/(?:^|\n)\s*(?:#|\*|_|\[|\()?\s*scene\s*#?\s*(\d+)/i);
+      if (match) return parseInt(match[1], 10);
+    }
+    return defaultIndex + 1;
+  }
+
+  function cleanPromptContent(text) {
+    if (!text) return '';
+    let cleaned = text.trim();
+
+    // 1. If text contains an explicit 'IMAGE PROMPT:' section, extract everything under it
+    const imgPromptMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]?\s*(?:\*{1,2}|_{1,2}|\])?\s*[\r\n]+([\s\S]+)$/i);
+    if (imgPromptMatch && imgPromptMatch[1].trim()) {
+      return imgPromptMatch[1].trim();
+    }
+
+    // Also check inline 'IMAGE PROMPT: ...'
+    const inlineImgMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]\s*(?:\*{1,2}|_{1,2}|\])?\s*([^\r\n][\s\S]*)$/i);
+    if (inlineImgMatch && inlineImgMatch[1].trim()) {
+      return inlineImgMatch[1].trim();
+    }
+
+    // 2. Timestamp regex literal
+    const timeRegex = /^[\[\(]?#?\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*(?:to|-|—|–)\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*[\]\)]?\s*[:\-\—\–]?\s*/i;
+
+    // 3. Scene heading regex (must have a number or word-number, e.g. 'Scene 1', '[Scene 1]', not pure [SCENE])
+    const headingRegex = /^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z])\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i;
+
+    // 4. Numbered list item prefix (e.g. 1., 2), #1 - but NOT timestamps like 0:00)
+    const numberRegex = /^(?:\[|\()?#?\d+[\.\)\-:\—\–\]](?!\d{2}\b)\s*/;
+
+    // 5. Sentence / Voiceover / Narration line regex
+    const sentenceRegex = /^(?:sentence|voiceover|narration|script|dialogue)\s*[:\-\—\–]\s*(?:["'“”][^"“”\r\n]+["'“”]|[^\r\n]+)\s*/i;
+
+    // Strip repeatedly in any order (e.g. Scene 1 -> (0:00) to (0:08) -> Sentence: "..." -> prompt)
+    for (let round = 0; round < 3; round++) {
+      cleaned = cleaned
+        .replace(timeRegex, '')
+        .replace(headingRegex, '')
+        .replace(numberRegex, '')
+        .replace(sentenceRegex, '')
+        .trim();
+    }
+
+    // Trim leading/trailing quotes and punctuation
+    cleaned = cleaned.replace(/^["'\s:\-\—\–]+/, '').replace(/["'\s]+$/, '').trim();
+
+    return cleaned;
+  }
+
+  const PROMPT_SECTION_TAG_REGEX = /^(?:\[\s*(?:scene|characters?|environment|setting|historical|lighting|color|composition|style|negative|aspect|camera|subject|props|details|mood|render)|(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompts?\s*[:\-\—\–]?\s*(?:\*{1,2}|_{1,2}|\])?)/i;
+
+  const TIMESTAMP_LINE_REGEX = new RegExp(
+    `^(?:#+|\\*+|_+|\\[|\\()?\\s*(?:(?:scene|image|shot|prompt|cut)\\s*#?\\d+\\s*[:\\-\\—\\–]?\\s*|\\d+[\\.\\)\\-:\\—\\–]\\s*)?\\(?\\s*(?:\\d{1,2}:)?\\d{1,2}:\\d{2}\\s*\\)?\\s*(?:to|-|—|–)\\s*\\(?\\s*(?:\\d{1,2}:)?\\d{1,2}:\\d{2}\\s*\\)?\\s*(?:\\]|\\))?`,
+    'i'
+  );
+
+  function isTimestampLine(line) {
+    const trimmed = (line || '').trim();
+    return TIMESTAMP_LINE_REGEX.test(trimmed);
+  }
 
   function isPureHeading(line) {
     const trimmed = (line || '').trim();
     if (!trimmed) return false;
+    // Section tags inside structured prompts (e.g. [SCENE], [CHARACTERS]) are NOT scene headings!
+    if (PROMPT_SECTION_TAG_REGEX.test(trimmed)) return false;
     if (DIVIDER_REGEX.test(trimmed)) return true;
     if (PURE_HEADING_REGEX.test(trimmed)) return true;
     if (STANDALONE_NUMBER_REGEX.test(trimmed)) return true;
@@ -181,6 +398,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!rawText || !rawText.trim()) return [];
 
     const rawLines = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+    // Strategy 0: Timestamp-based segmentation (Highest Priority for scripts & multi-paragraph scenes)
+    const timestampIndices = [];
+    rawLines.forEach((l, idx) => {
+      if (isTimestampLine(l)) {
+        timestampIndices.push(idx);
+      }
+    });
+
+    if (timestampIndices.length > 0) {
+      const prompts = [];
+      for (let i = 0; i < timestampIndices.length; i++) {
+        const startLine = timestampIndices[i];
+        const endLine = (i + 1 < timestampIndices.length) ? timestampIndices[i + 1] : rawLines.length;
+        const slice = rawLines.slice(startLine, endLine);
+        const combined = slice.map(l => l.trim()).filter(Boolean).join('\n');
+        if (combined.trim().length > 0) {
+          prompts.push(combined.trim());
+        }
+      }
+      if (prompts.length > 0) {
+        return prompts;
+      }
+    }
 
     // Strategy 1: Scene Headings segmentation (e.g. "scene 1 :", "IMAGE 2", "Prompt 3:")
     const hasPureHeadings = rawLines.some(l => isPureHeading(l));
@@ -282,15 +523,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (parsedPreviewCard) parsedPreviewCard.style.display = 'block';
       if (previewCountHint) previewCountHint.textContent = `${prompts.length} scene(s) ready`;
       if (parsedPreviewList) {
-        parsedPreviewList.innerHTML = prompts.map((p, idx) => `
+        parsedPreviewList.innerHTML = prompts.map((p, idx) => {
+          const scNum = extractSceneNumber(p, idx);
+          const tsInfo = extractTimestampInfo(p);
+          const tagDisplay = tsInfo ? `Scene ${scNum}: ${tsInfo.display}` : `Scene #${scNum}`;
+          const cleanP = cleanPromptContent(p);
+          return `
           <div class="preview-item">
             <div class="preview-item-header">
-              <span class="preview-item-tag">Scene #${idx + 1}</span>
-              <span class="preview-item-chars">${p.length} chars</span>
+              <span class="preview-item-tag">${escapeHtml(tagDisplay)}</span>
+              <span class="preview-item-chars">${cleanP.length} chars</span>
             </div>
-            <div class="preview-item-body">${escapeHtml(p)}</div>
+            <div class="preview-item-body">${escapeHtml(cleanP)}</div>
           </div>
-        `).join('');
+        `;
+        }).join('');
       }
     } else {
       if (parsedPreviewCard) parsedPreviewCard.style.display = 'none';
@@ -446,12 +693,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- GENERAL SETTINGS ---
   btnSaveSettings.addEventListener('click', async () => {
+    const launchMode = settingLaunchMode ? settingLaunchMode.value : 'window';
+    const keepOnTop = checkKeepOnTop ? checkKeepOnTop.checked : true;
     await chrome.storage.local.set({
       subfolder: settingSubfolder.value.trim() || 'Flow_Batch',
       delaySeconds: parseInt(settingDelay.value, 10) || 10,
       expectedImages: parseInt(settingExpectedImages.value, 10) || 4,
-      maxTimeoutSeconds: parseInt(settingTimeout.value, 10) || 120
+      maxTimeoutSeconds: parseInt(settingTimeout.value, 10) || 120,
+      launchMode: launchMode,
+      keepOnTop: keepOnTop
     });
+    sendRuntimeMessage({ action: 'UPDATE_PANEL_BEHAVIOR', launchMode, keepOnTop });
     const orig = btnSaveSettings.textContent;
     btnSaveSettings.textContent = '✅ Settings Saved!';
     setTimeout(() => btnSaveSettings.textContent = orig, 1500);
@@ -641,7 +893,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Active Prompt Box
     if (status === 'running' || status === 'paused') {
       if (queue[currentIndex]) {
-        monitorActivePromptText.textContent = `[Scene #${currentIndex + 1} of ${total}]: ${queue[currentIndex].prompt}`;
+        const curPrompt = queue[currentIndex].prompt || '';
+        const scNum = extractSceneNumber(curPrompt, currentIndex);
+        const tsInfo = extractTimestampInfo(curPrompt);
+        const scDisplay = tsInfo ? `Scene ${scNum}: ${tsInfo.display}` : `Scene #${scNum}`;
+        monitorActivePromptText.textContent = `[${scDisplay} (${currentIndex + 1}/${total})]: ${cleanPromptContent(curPrompt)}`;
       }
     } else if (status === 'completed') {
       monitorActivePromptText.textContent = '🎉 All prompts completed and downloaded successfully!';
@@ -681,6 +937,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     'delaySeconds',
     'expectedImages',
     'maxTimeoutSeconds',
+    'launchMode',
+    'keepOnTop',
     'status',
     'queue',
     'currentIndex',
@@ -720,6 +978,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const initialCount = parseInt(initialState.expectedImages, 10) || 4;
   setTargetImageCount(initialCount);
   if (initialState.maxTimeoutSeconds) settingTimeout.value = initialState.maxTimeoutSeconds;
+  if (settingLaunchMode && initialState.launchMode) {
+    settingLaunchMode.value = initialState.launchMode;
+  }
+  if (checkKeepOnTop && initialState.keepOnTop !== undefined) {
+    checkKeepOnTop.checked = !!initialState.keepOnTop;
+  }
 
   validateCharacterRequirements();
   updateUIState(initialState);

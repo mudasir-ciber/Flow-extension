@@ -1,0 +1,25 @@
+============================================================
+           AMJAD'S FLOW EXTENSION (v1.0.0)
+             Created By ⚡ MUDASIR AHMED
+============================================================
+
+HOW TO INSTALL IN GOOGLE CHROME (10 Seconds Setup):
+------------------------------------------------------------
+1. Google Chrome open karein.
+2. Address bar mein ye type karein aur Enter dabayein:
+   chrome://extensions
+3. Top-Right corner par "Developer mode" ka toggle button ON karein.
+4. Top-Left par "Load unpacked" button par click karein.
+5. Is folder ("AMJADS-FLOW-EXTENSION") ko select kar lein.
+
+Done! Extension Chrome mein install ho chuki hai.
+
+KEY FEATURES:
+------------------------------------------------------------
+- Full Google Flow Studio Automation (Automatic Prompt Entry & Generation)
+- Standalone Draggable, Minimizable Floating Window
+- 📌 Always-On-Top PiP Mode (Never hides behind browser)
+- 🗖 Side-by-Side Split Screen Dock Mode (Zero Overlap with Chrome)
+- Scene & Timestamp detection in filenames: Scene 1: (0-00) to (0-08)...
+- Multi-resolution App Icons & Glowing UI
+============================================================

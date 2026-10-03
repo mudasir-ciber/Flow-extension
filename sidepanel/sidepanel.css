@@ -124,11 +124,143 @@ body {
 }
 
 .sub-tag {
-  font-size: 9px;
+  font-size: 9.5px;
   color: var(--text-muted);
   display: block;
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+.creator-lightning {
+  display: inline-block;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #38bdf8;
+  animation: lightningBlink 2.2s infinite ease-in-out;
+  text-shadow: 0 0 4px rgba(56, 189, 248, 0.9), 0 0 10px rgba(56, 189, 248, 0.6);
+  cursor: default;
+  transition: all 0.2s ease;
+}
+
+@keyframes lightningBlink {
+  0%, 100% {
+    color: #38bdf8;
+    text-shadow: 0 0 3px #38bdf8, 0 0 8px rgba(56, 189, 248, 0.6);
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  15% {
+    color: #38bdf8;
+    text-shadow: 0 0 4px #38bdf8, 0 0 10px rgba(56, 189, 248, 0.8);
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* Sudden Double Lightning Strike Flash */
+  18% {
+    color: #ffffff;
+    text-shadow: 0 0 6px #ffffff, 0 0 14px #38bdf8, 0 0 25px #0284c7, 0 0 35px #38bdf8;
+    opacity: 1;
+    transform: scale(1.04);
+    filter: brightness(2);
+  }
+  21% {
+    color: #0284c7;
+    text-shadow: 0 0 1px #0284c7;
+    opacity: 0.6;
+    transform: scale(0.98);
+    filter: brightness(0.8);
+  }
+  24% {
+    color: #ffffff;
+    text-shadow: 0 0 8px #ffffff, 0 0 18px #38bdf8, 0 0 30px #38bdf8, 0 0 40px #0284c7;
+    opacity: 1;
+    transform: scale(1.06);
+    filter: brightness(2.2);
+  }
+  28% {
+    color: #38bdf8;
+    text-shadow: 0 0 5px #38bdf8, 0 0 12px rgba(56, 189, 248, 0.8);
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  /* Calm breathing state */
+  60% {
+    color: #38bdf8;
+    text-shadow: 0 0 3px #38bdf8, 0 0 7px rgba(56, 189, 248, 0.5);
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  /* Secondary electric pulse */
+  70% {
+    color: #e0f2fe;
+    text-shadow: 0 0 5px #fff, 0 0 12px #38bdf8, 0 0 20px #38bdf8;
+    opacity: 1;
+    transform: scale(1.03);
+    filter: brightness(1.6);
+  }
+  73% {
+    color: #38bdf8;
+    text-shadow: 0 0 2px #38bdf8;
+    opacity: 0.75;
+    transform: scale(1);
+    filter: brightness(0.9);
+  }
+  76% {
+    color: #ffffff;
+    text-shadow: 0 0 6px #fff, 0 0 15px #38bdf8;
+    opacity: 1;
+    transform: scale(1.04);
+    filter: brightness(1.8);
+  }
+  80% {
+    color: #38bdf8;
+    text-shadow: 0 0 3px #38bdf8, 0 0 8px rgba(56, 189, 248, 0.6);
+    opacity: 0.95;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn-header {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.icon-btn-header:hover {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+  transform: translateY(-1px);
+}
+
+.icon-btn-header svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.icon-btn-header.active {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .status-pill {

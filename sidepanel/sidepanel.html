@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AMJAD'S FLOW EXTENSION</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="shortcut icon" type="image/png" href="../icons/icon-128.png">
+  <link rel="icon" type="image/png" sizes="256x256" href="../icons/icon-256.png">
+  <link rel="icon" type="image/png" sizes="128x128" href="../icons/icon-128.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="../icons/icon-64.png">
+  <link rel="icon" type="image/png" sizes="48x48" href="../icons/icon-48.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="../icons/icon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../icons/icon-16.png">
+  <link rel="apple-touch-icon" href="../icons/icon-128.png">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body class="theme-dark">
@@ -14,10 +23,24 @@
         <img class="brand-logo" src="../icons/icon-48.png" alt="Logo">
         <div class="brand-text">
           <h1>AMJAD'S FLOW EXTENSION</h1>
-          <span class="sub-tag">Studio Automation Engine</span>
+          <span class="sub-tag">Created By <span class="creator-lightning">&#9889; MUDASIR AHMED</span></span>
         </div>
       </div>
-      <div class="status-pill" id="global-status-pill">IDLE</div>
+      <div class="header-actions">
+        <button id="btn-pin-pip" class="icon-btn-header" title="📌 Always On Top (Floating PiP Mode - Never Hides on Tab Switch)">
+          <svg viewBox="0 0 24 24"><path d="M16 12V4H17V2H7V4H8V12L6 14V16H11V22L12 23L13 22V16H18V14L16 12Z"/></svg>
+        </button>
+        <button id="btn-dock-split" class="icon-btn-header" title="🗖 Side-by-Side Split Screen with Chrome (Zero Overlap)">
+          <svg viewBox="0 0 24 24"><path d="M4 3h16c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V5c0-1.1.9-2 2-2zm10 2v14h6V5h-6zM4 5v14h8V5H4z"/></svg>
+        </button>
+        <button id="btn-popout-window" class="icon-btn-header" title="Open as Standalone Floating Window (Draggable & Minimizable)">
+          <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+        </button>
+        <button id="btn-minimize-window" class="icon-btn-header" title="Minimize Window" style="display: none;">
+          <svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
+        </button>
+        <div class="status-pill" id="global-status-pill">IDLE</div>
+      </div>
     </header>
 
     <!-- Navigation Tabs: HOME, PROMPTS, CHARACTER, SETTINGS -->
@@ -282,6 +305,24 @@
         <div class="form-group">
           <label for="setting-timeout">Max Timeout Per Prompt (seconds):</label>
           <input type="number" id="setting-timeout" value="120" min="30" max="300">
+        </div>
+
+        <div class="form-group">
+          <label for="setting-launch-mode">Extension Window Mode:</label>
+          <select id="setting-launch-mode">
+            <option value="window" selected>🗗 Standalone Window (Draggable &amp; Minimizable)</option>
+            <option value="sidepanel">📑 Chrome Side Panel</option>
+          </select>
+          <span class="small-hint">Standalone window ko aap desktop par kahin bhi drag, resize aur minimize kar sakte hain.</span>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="custom-checkbox">
+            <input type="checkbox" id="check-keep-on-top" checked>
+            <span class="checkmark"></span>
+            Tab switch hone par window ko samne (in-front) rakhein
+          </label>
+          <span class="small-hint">Agar Chrome full screen ho, toh tab badalne par window peeche nahi chhupegi.</span>
         </div>
 
         <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>

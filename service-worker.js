@@ -3,76 +3,231 @@
 
 // --- EXTENSION LIFECYCLE & SIDE PANEL CONFIGURATION ---
 
-// Set panel behavior inside onInstalled and onStartup (Defensive & Error-Free)
+// --- APP WINDOW MANAGEMENT (STANDALONE DRAGGABLE & MINIMIZABLE WINDOW) ---
+
+let appWindowId = null;
+let isUserMinimized = false;
+
+async function openAppWindow() {
+  isUserMinimized = false;
+  // 1. Check if existing standalone popup window is already open
+  try {
+    const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+    for (const w of wins) {
+      if (w.tabs && w.tabs.some(t => (t.url || '').includes('sidepanel/sidepanel.html'))) {
+        await chrome.windows.update(w.id, { focused: true, state: 'normal' });
+        appWindowId = w.id;
+        return w;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Open fresh standalone draggable & minimizable popup window
+  const width = 480;
+  const height = 820;
+  let left = 100;
+  let top = 60;
+
+  try {
+    const curWin = await chrome.windows.getCurrent();
+    if (curWin && curWin.left !== undefined && curWin.width !== undefined) {
+      left = Math.max(0, curWin.left + curWin.width - width - 20);
+      top = Math.max(0, curWin.top + 30);
+    }
+  } catch (e) {}
+
+  const win = await chrome.windows.create({
+    url: chrome.runtime.getURL('sidepanel/sidepanel.html?mode=window'),
+    type: 'popup',
+    width: width,
+    height: height,
+    left: left,
+    top: top,
+    focused: true
+  });
+
+  appWindowId = win.id;
+  return win;
+}
+
+if (chrome.windows && chrome.windows.onRemoved) {
+  chrome.windows.onRemoved.addListener((closedWindowId) => {
+    if (closedWindowId === appWindowId) {
+      appWindowId = null;
+      isUserMinimized = false;
+    }
+  });
+}
+
+// Side-by-Side Split Screen: Tiles Browser (Left) and Extension (Right) with Zero Overlap
+async function dockSplitScreen(screenInfo) {
+  try {
+    const availWidth = screenInfo?.availWidth || 1920;
+    const availHeight = screenInfo?.availHeight || 1080;
+    const extWidth = Math.min(500, Math.max(440, Math.round(availWidth * 0.28)));
+    const browserWidth = Math.max(600, availWidth - extWidth);
+
+    // 1. Find or open popup extension window
+    let popWin = null;
+    const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup', 'normal'] });
+    for (const w of wins) {
+      if (w.tabs && w.tabs.some(t => (t.url || '').includes('sidepanel/sidepanel.html'))) {
+        popWin = w;
+        break;
+      }
+    }
+
+    if (!popWin) {
+      popWin = await openAppWindow();
+    }
+
+    // 2. Find browser normal window (prefer the one with Flow tab, or normal browser window)
+    let browserWin = null;
+    const flowTab = await findFlowTab();
+    if (flowTab && flowTab.windowId) {
+      browserWin = wins.find(w => w.id === flowTab.windowId && w.type === 'normal');
+    }
+    if (!browserWin) {
+      browserWin = wins.find(w => w.type === 'normal');
+    }
+
+    // 3. Tile browser window to left
+    if (browserWin) {
+      await chrome.windows.update(browserWin.id, {
+        state: 'normal',
+        left: 0,
+        top: 0,
+        width: browserWidth,
+        height: availHeight
+      });
+    }
+
+    // 4. Tile extension window to right
+    if (popWin) {
+      await chrome.windows.update(popWin.id, {
+        state: 'normal',
+        left: browserWidth,
+        top: 0,
+        width: extWidth,
+        height: availHeight,
+        focused: true
+      });
+      isUserMinimized = false;
+    }
+
+    await addLog(`🗖 Docked Split Screen: Chrome (${browserWidth}px) | Extension (${extWidth}px). Zero overlap!`);
+    return { success: true };
+  } catch (err) {
+    console.warn('[Flow SW] dockSplitScreen error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Smart Tab-Switch Auto-Elevation: Keep window in front when switching tabs (unless user minimized)
+if (chrome.tabs && chrome.tabs.onActivated) {
+  chrome.tabs.onActivated.addListener(async () => {
+    try {
+      const { keepOnTop = true } = await chrome.storage.local.get('keepOnTop');
+      if (!keepOnTop || isUserMinimized) return;
+
+      setTimeout(async () => {
+        try {
+          if (isUserMinimized) return;
+          const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+          const popWin = wins.find(w => w.tabs && w.tabs.some(t => (t.url || '').includes('sidepanel/sidepanel.html')));
+          if (popWin && popWin.state !== 'minimized') {
+            await chrome.windows.update(popWin.id, { focused: true });
+          }
+        } catch (e) {}
+      }, 120);
+    } catch (e) {}
+  });
+}
+
+// Set panel behavior inside onInstalled and onStartup
 if (chrome.runtime && chrome.runtime.onInstalled) {
   chrome.runtime.onInstalled.addListener(async () => {
-  console.log('[Flow SW] Service Worker Installed');
+    console.log('[Flow SW] Service Worker Installed');
 
-  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    try {
-      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    } catch (e) {
-      // Benign if already configured or unsupported
+    const { launchMode = 'window' } = await chrome.storage.local.get('launchMode');
+    if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+      try {
+        await chrome.sidePanel.setPanelBehavior({
+          openPanelOnActionClick: launchMode === 'sidepanel'
+        });
+      } catch (e) {}
     }
-  }
 
-  // Initialize storage defaults safely
-  try {
-    const current = await chrome.storage.local.get([
-      'queue',
-      'currentIndex',
-      'status',
-      'characterAnchor',
-      'anchorPosition',
-      'subfolder',
-      'delaySeconds',
-      'expectedImages',
-      'maxTimeoutSeconds',
-      'stats',
-      'logs'
-    ]);
+    // Initialize storage defaults safely
+    try {
+      const current = await chrome.storage.local.get([
+        'queue',
+        'currentIndex',
+        'status',
+        'characterAnchor',
+        'anchorPosition',
+        'subfolder',
+        'delaySeconds',
+        'expectedImages',
+        'maxTimeoutSeconds',
+        'launchMode',
+        'keepOnTop',
+        'stats',
+        'logs'
+      ]);
 
-    await chrome.storage.local.set({
-      queue: current.queue || [],
-      currentIndex: current.currentIndex || 0,
-      status: current.status || 'idle',
-      characterAnchor: current.characterAnchor || '',
-      anchorPosition: current.anchorPosition || 'prefix',
-      subfolder: current.subfolder || 'Flow_Batch',
-      delaySeconds: current.delaySeconds || 5,
-      expectedImages: current.expectedImages || 4,
-      maxTimeoutSeconds: current.maxTimeoutSeconds || 120,
-      stats: current.stats || { totalPrompts: 0, completedPrompts: 0, downloadedImages: 0 },
-      logs: current.logs || [{ timestamp: new Date().toLocaleTimeString(), text: 'Flow Batch Automation Engine Ready.' }]
-    });
-  } catch (err) {
-    console.warn('[Flow SW] Storage initialization notice:', err);
-  }
+      await chrome.storage.local.set({
+        queue: current.queue || [],
+        currentIndex: current.currentIndex || 0,
+        status: current.status || 'idle',
+        characterAnchor: current.characterAnchor || '',
+        anchorPosition: current.anchorPosition || 'prefix',
+        subfolder: current.subfolder || 'Flow_Batch',
+        delaySeconds: current.delaySeconds || 5,
+        expectedImages: current.expectedImages || 4,
+        maxTimeoutSeconds: current.maxTimeoutSeconds || 120,
+        launchMode: current.launchMode || 'window',
+        keepOnTop: current.keepOnTop !== undefined ? current.keepOnTop : true,
+        stats: current.stats || { totalPrompts: 0, completedPrompts: 0, downloadedImages: 0 },
+        logs: current.logs || [{ timestamp: new Date().toLocaleTimeString(), text: 'Flow Batch Automation Engine Ready.' }]
+      });
+    } catch (err) {
+      console.warn('[Flow SW] Storage initialization notice:', err);
+    }
   });
 }
 
 if (chrome.runtime && chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(async () => {
-  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    try {
-      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    } catch (e) {}
-  }
+    const { launchMode = 'window' } = await chrome.storage.local.get('launchMode');
+    if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+      try {
+        await chrome.sidePanel.setPanelBehavior({
+          openPanelOnActionClick: launchMode === 'sidepanel'
+        });
+      } catch (e) {}
+    }
   });
 }
 
-// Fallback: If user clicks the extension action icon in toolbar, ensure side panel opens
+// Extension toolbar icon click: Opens draggable standalone window (or side panel if selected in settings)
 if (chrome.action && chrome.action.onClicked) {
   chrome.action.onClicked.addListener(async (tab) => {
-    if (chrome.sidePanel && chrome.sidePanel.open) {
-      try {
-        if (tab && tab.id) {
-          await chrome.sidePanel.open({ tabId: tab.id });
-        } else if (tab && tab.windowId) {
-          await chrome.sidePanel.open({ windowId: tab.windowId });
-        }
-      } catch (e) {}
+    const { launchMode = 'window' } = await chrome.storage.local.get('launchMode');
+    if (launchMode === 'sidepanel') {
+      if (chrome.sidePanel && chrome.sidePanel.open) {
+        try {
+          if (tab && tab.id) {
+            await chrome.sidePanel.open({ tabId: tab.id });
+          } else if (tab && tab.windowId) {
+            await chrome.sidePanel.open({ windowId: tab.windowId });
+          }
+          return;
+        } catch (e) {}
+      }
     }
+    // Default: Open standalone draggable & minimizable floating window
+    await openAppWindow();
   });
 }
 
@@ -224,23 +379,74 @@ async function ensureContentScriptInjected(tabId) {
 
 // --- SANITIZE & CLEAN HELPERS ---
 
-function cleanPromptContent(text) {
-  if (!text) return '';
-  return text
-    .replace(/^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)(?:\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z]))?\s*[:\-\—\–]\s*/i, '')
-    .replace(/^(?:\[|\()?#?\s*\d{1,2}(?::\d{2})?\s*(?:to|-|—|–)\s*#?\d{1,2}(?::\d{2})?\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i, '')
-    .replace(/^(?:\[|\()?#?\d+[\.\)\-:\—\–\]]\s*/, '')
-    .replace(/^["']|["']$/g, '')
-    .trim();
-}
-
-function extractTimestamp(text) {
+function extractTimestampInfo(text) {
   if (!text) return null;
-  const match = text.match(/\(?\s*(\b\d{1,2}(?::\d{2})?\s*(?:to|-|—|–)\s*\d{1,2}(?::\d{2})?\b)\s*\)?/i);
+  const timePattern = '(?:\\d{1,2}:)?\\d{1,2}:\\d{2}';
+  const regex = new RegExp(`(?:\\[|\\()?#?\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:to|-|—|–)\\s*\\(?\\s*(${timePattern})\\s*\\)?\\s*(?:\\]|\\))?`, 'i');
+  const match = text.match(regex);
   if (match) {
-    return match[1].replace(/[:]/g, '-').trim();
+    const start = match[1];
+    const end = match[2];
+    return {
+      display: `(${start}) to (${end})`,
+      fileSafe: `(${start.replace(/:/g, '-')}) to (${end.replace(/:/g, '-')})`,
+      start,
+      end
+    };
   }
   return null;
+}
+
+function extractSceneNumber(text, defaultIndex = 0) {
+  if (text) {
+    const match = text.match(/(?:^|\n)\s*(?:#|\*|_|\[|\()?\s*scene\s*#?\s*(\d+)/i);
+    if (match) return parseInt(match[1], 10);
+  }
+  return defaultIndex + 1;
+}
+
+function cleanPromptContent(text) {
+  if (!text) return '';
+  let cleaned = text.trim();
+
+  // 1. If text contains an explicit 'IMAGE PROMPT:' section, extract everything under it
+  const imgPromptMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]?\s*(?:\*{1,2}|_{1,2}|\])?\s*[\r\n]+([\s\S]+)$/i);
+  if (imgPromptMatch && imgPromptMatch[1].trim()) {
+    return imgPromptMatch[1].trim();
+  }
+
+  // Also check inline 'IMAGE PROMPT: ...'
+  const inlineImgMatch = cleaned.match(/(?:^|\n)\s*(?:#+\s*|\*{1,2}|_{1,2}|\[)?\s*image\s+prompt\s*[:\-\—\–]\s*(?:\*{1,2}|_{1,2}|\])?\s*([^\r\n][\s\S]*)$/i);
+  if (inlineImgMatch && inlineImgMatch[1].trim()) {
+    return inlineImgMatch[1].trim();
+  }
+
+  // 2. Timestamp regex literal
+  const timeRegex = /^[\[\(]?#?\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*(?:to|-|—|–)\s*[\[\(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\]\)]?\s*[\]\)]?\s*[:\-\—\–]?\s*/i;
+
+  // 3. Scene heading regex (must have a number or word-number, e.g. 'Scene 1', '[Scene 1]', not pure [SCENE])
+  const headingRegex = /^(?:#{1,6}\s*|\*{1,2}|_{1,2}|\[|\()?\s*(?:scene|image|img|prompt|shot|panel|frame|photo|picture|pic|cut|take|part|slide|act|chapter|generation|gen|render)\s+#?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|[a-z])\s*(?:\]|\))?\s*[:\-\—\–]?\s*/i;
+
+  // 4. Numbered list item prefix (e.g. 1., 2), #1 - but NOT timestamps like 0:00)
+  const numberRegex = /^(?:\[|\()?#?\d+[\.\)\-:\—\–\]](?!\d{2}\b)\s*/;
+
+  // 5. Sentence / Voiceover / Narration line regex
+  const sentenceRegex = /^(?:sentence|voiceover|narration|script|dialogue)\s*[:\-\—\–]\s*(?:["'“”][^"“”\r\n]+["'“”]|[^\r\n]+)\s*/i;
+
+  // Strip repeatedly in any order (e.g. Scene 1 -> (0:00) to (0:08) -> Sentence: "..." -> prompt)
+  for (let round = 0; round < 3; round++) {
+    cleaned = cleaned
+      .replace(timeRegex, '')
+      .replace(headingRegex, '')
+      .replace(numberRegex, '')
+      .replace(sentenceRegex, '')
+      .trim();
+  }
+
+  // Trim leading/trailing quotes and punctuation
+  cleaned = cleaned.replace(/^["'\s:\-\—\–]+/, '').replace(/["'\s]+$/, '').trim();
+
+  return cleaned;
 }
 
 function sanitizePath(str) {
@@ -252,12 +458,14 @@ function sanitizePath(str) {
 async function downloadImages(imageUrls, promptIndex, customFolder, promptText, rawPrompt) {
   const { subfolder = 'Flow_Batch', expectedImages = 4 } = await chrome.storage.local.get(['subfolder', 'expectedImages']);
   const targetFolder = sanitizePath(customFolder || subfolder);
-  const promptNumberStr = String(promptIndex + 1).padStart(4, '0');
-  const timestamp = extractTimestamp(rawPrompt) || extractTimestamp(promptText);
+  const textForInfo = rawPrompt || promptText || '';
+  const sceneNum = extractSceneNumber(textForInfo, promptIndex);
+  const tsInfo = extractTimestampInfo(textForInfo);
   const targetCount = expectedImages || 4;
   const targetUrls = (imageUrls || []).slice(0, targetCount);
 
-  await addLog(`⬇️ Scene #${promptIndex + 1}${timestamp ? ` (${timestamp})` : ''}: Initiating download for ${targetUrls.length} image(s)...`);
+  const sceneDisplay = tsInfo ? `Scene ${sceneNum}: ${tsInfo.display}` : `Scene #${sceneNum}`;
+  await addLog(`⬇️ ${sceneDisplay}: Initiating download for ${targetUrls.length} image(s)...`);
 
   const downloadPromises = targetUrls.map((url, idx) => {
     return new Promise((resolve) => {
@@ -265,7 +473,16 @@ async function downloadImages(imageUrls, promptIndex, customFolder, promptText, 
       if (url.includes('.webp') || url.includes('format=webp')) ext = 'webp';
       else if (url.includes('.jpg') || url.includes('.jpeg')) ext = 'jpg';
 
-      const baseName = timestamp ? `${timestamp}_img${idx + 1}` : `Scene_${promptNumberStr}_img${idx + 1}`;
+      let baseName;
+      if (tsInfo) {
+        // e.g. Scene 1 - (0-00) to (0-08)_1 or Scene 1 - (0-00) to (0-08) for single image
+        // (Windows filenames do not allow ':', so '-' is used in timestamps)
+        const suffix = targetUrls.length > 1 ? `_${idx + 1}` : '';
+        baseName = `Scene ${sceneNum} - ${tsInfo.fileSafe}${suffix}`;
+      } else {
+        const promptNumberStr = String(sceneNum).padStart(4, '0');
+        baseName = `Scene_${promptNumberStr}_img${idx + 1}`;
+      }
       const filename = `${targetFolder}/${baseName}.${ext}`;
 
       chrome.downloads.download(
@@ -322,7 +539,7 @@ async function downloadImages(imageUrls, promptIndex, customFolder, promptText, 
     await chrome.storage.local.set({ stats });
   } catch (e) {}
 
-  await addLog(`💾 Scene #${promptIndex + 1}: ${successCount} image(s) verified and saved on disk!`);
+  await addLog(`💾 ${sceneDisplay}: ${successCount} image(s) verified and saved on disk!`);
   return successCount;
 }
 
@@ -455,8 +672,104 @@ const SUPPORTED_ACTIONS = [
   'STOP_BATCH',
   'DOWNLOAD_IMAGES',
   'PROMPT_COMPLETED',
-  'PROMPT_ERROR'
+  'PROMPT_ERROR',
+  'DISPATCH_NATIVE_SUBMIT',
+  'OPEN_APP_WINDOW',
+  'UPDATE_PANEL_BEHAVIOR',
+  'USER_MINIMIZED',
+  'USER_RESTORED',
+  'DOCK_SPLIT_SCREEN'
 ];
+
+async function dispatchNativeSubmitViaDebugger(tabId, coords) {
+  if (!chrome.debugger) {
+    console.warn('[Flow SW] chrome.debugger is NOT available. Check manifest permissions.');
+    return { success: false, error: 'No debugger API' };
+  }
+  const target = { tabId };
+  try {
+    // 1. Attach debugger if not already attached
+    try {
+      await chrome.debugger.attach(target, "1.3");
+    } catch (attachErr) {
+      if (!attachErr.message?.includes('already attached')) {
+        throw attachErr;
+      }
+    }
+
+    // 2. Hardware Enter KeyDown (Trusted native OS event with isTrusted: true)
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+      macCharCode: 13,
+      unmodifiedText: "\r",
+      text: "\r",
+      key: "Enter",
+      code: "Enter"
+    });
+
+    // 3. Hardware Enter Char event
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "char",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+      unmodifiedText: "\r",
+      text: "\r",
+      key: "Enter",
+      code: "Enter"
+    });
+
+    // Natural 40ms human keypress dwell time
+    await new Promise(r => setTimeout(r, 40));
+
+    // 4. Hardware Enter KeyUp
+    await chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+      key: "Enter",
+      code: "Enter"
+    });
+
+    // 5. If button coordinates provided, ALSO dispatch native mouse click directly to the button center
+    if (coords && typeof coords.x === 'number' && typeof coords.y === 'number') {
+      await new Promise(r => setTimeout(r, 30));
+      await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: coords.x,
+        y: coords.y
+      });
+      await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: coords.x,
+        y: coords.y,
+        button: "left",
+        clickCount: 1
+      });
+      await new Promise(r => setTimeout(r, 30));
+      await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: coords.x,
+        y: coords.y,
+        button: "left",
+        clickCount: 1
+      });
+    }
+
+    // 6. Cleanly detach debugger
+    try {
+      await chrome.debugger.detach(target);
+    } catch(e) {}
+
+    console.log('[Flow SW] Native CDP Enter & Click dispatched to tab:', tabId);
+    return { success: true };
+  } catch (err) {
+    try { await chrome.debugger.detach(target); } catch(e) {}
+    console.warn('[Flow SW] CDP dispatch error:', err);
+    return { success: false, error: err.message };
+  }
+}
 
 if (chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -467,6 +780,17 @@ if (chrome.runtime && chrome.runtime.onMessage) {
   (async () => {
     try {
       switch (message.action) {
+        case 'DISPATCH_NATIVE_SUBMIT': {
+          const tabId = sender.tab?.id || (await findFlowTab())?.id;
+          if (tabId) {
+            const res = await dispatchNativeSubmitViaDebugger(tabId, message.coords);
+            sendResponse(res);
+          } else {
+            sendResponse({ success: false, error: 'No tab found' });
+          }
+          break;
+        }
+
         case 'FIND_FLOW_TAB': {
           const tab = await findFlowTab();
           sendResponse({ tab });
@@ -575,7 +899,7 @@ if (chrome.runtime && chrome.runtime.onMessage) {
           }
 
           const currentItem = state.queue[state.currentIndex];
-          let currentPrompt = (currentItem.prompt || '').trim();
+          let currentPrompt = cleanPromptContent((currentItem.prompt || '').trim());
           const anchor = (state.characterAnchor || '').trim();
           if (anchor && state.anchorPosition === 'prefix') {
             currentPrompt = `${anchor}, ${currentPrompt}`;
@@ -628,7 +952,12 @@ if (chrome.runtime && chrome.runtime.onMessage) {
           stats.completedPrompts = (stats.completedPrompts || 0) + 1;
 
           await chrome.storage.local.set({ queue, stats });
-          await addLog(`✅ Completed Scene #${promptIndex + 1} (${imagesCount} images).`);
+          const rawItem = queue[promptIndex];
+          const rawText = rawItem?.prompt || '';
+          const scNum = extractSceneNumber(rawText, promptIndex);
+          const tInfo = extractTimestampInfo(rawText);
+          const scDisplay = tInfo ? `Scene ${scNum}: ${tInfo.display}` : `Scene #${scNum}`;
+          await addLog(`✅ Completed ${scDisplay} (${imagesCount} images).`);
 
           advanceQueue();
           sendResponse({ success: true });
@@ -647,6 +976,43 @@ if (chrome.runtime && chrome.runtime.onMessage) {
 
           advanceQueue();
           sendResponse({ success: true });
+          break;
+        }
+
+        case 'OPEN_APP_WINDOW': {
+          const win = await openAppWindow();
+          sendResponse({ success: true, windowId: win?.id });
+          break;
+        }
+
+        case 'UPDATE_PANEL_BEHAVIOR': {
+          const { launchMode } = message;
+          if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+            try {
+              await chrome.sidePanel.setPanelBehavior({
+                openPanelOnActionClick: launchMode === 'sidepanel'
+              });
+            } catch (e) {}
+          }
+          sendResponse({ success: true });
+          break;
+        }
+
+        case 'USER_MINIMIZED': {
+          isUserMinimized = true;
+          sendResponse({ success: true });
+          break;
+        }
+
+        case 'USER_RESTORED': {
+          isUserMinimized = false;
+          sendResponse({ success: true });
+          break;
+        }
+
+        case 'DOCK_SPLIT_SCREEN': {
+          const res = await dockSplitScreen(message.screen);
+          sendResponse(res);
           break;
         }
 

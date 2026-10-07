@@ -10,44 +10,68 @@ let isUserMinimized = false;
 
 async function openAppWindow() {
   isUserMinimized = false;
-  // 1. Check if existing standalone popup window is already open
-  try {
-    const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
-    for (const w of wins) {
-      if (w.tabs && w.tabs.some(t => (t.url || '').includes('sidepanel/sidepanel.html'))) {
-        await chrome.windows.update(w.id, { focused: true, state: 'normal' });
-        appWindowId = w.id;
-        return w;
+
+  // 1. Desktop Mode: Try to open or focus standalone floating window
+  if (chrome.windows && typeof chrome.windows.create === 'function') {
+    try {
+      const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+      for (const w of wins) {
+        if (w.tabs && w.tabs.some(t => (t.url || '').includes('sidepanel/sidepanel.html'))) {
+          await chrome.windows.update(w.id, { focused: true, state: 'normal' });
+          appWindowId = w.id;
+          return w;
+        }
       }
+
+      const width = 480;
+      const height = 820;
+      let left = 100;
+      let top = 60;
+
+      try {
+        const curWin = await chrome.windows.getCurrent();
+        if (curWin && curWin.left !== undefined && curWin.width !== undefined) {
+          left = Math.max(0, curWin.left + curWin.width - width - 20);
+          top = Math.max(0, curWin.top + 30);
+        }
+      } catch (e) {}
+
+      const win = await chrome.windows.create({
+        url: chrome.runtime.getURL('sidepanel/sidepanel.html?mode=window'),
+        type: 'popup',
+        width: width,
+        height: height,
+        left: left,
+        top: top,
+        focused: true
+      });
+
+      if (win && win.id) {
+        appWindowId = win.id;
+        return win;
+      }
+    } catch (winErr) {
+      console.warn('[Flow SW] chrome.windows API failed or unsupported on this platform (Android/Mobile):', winErr);
     }
-  } catch (e) {}
+  }
 
-  // 2. Open fresh standalone draggable & minimizable popup window
-  const width = 480;
-  const height = 820;
-  let left = 100;
-  let top = 60;
-
+  // 2. Mobile (Lemur / Kiwi / Android) & Fallback: Open extension panel as a tab
   try {
-    const curWin = await chrome.windows.getCurrent();
-    if (curWin && curWin.left !== undefined && curWin.width !== undefined) {
-      left = Math.max(0, curWin.left + curWin.width - width - 20);
-      top = Math.max(0, curWin.top + 30);
+    const tabs = await chrome.tabs.query({});
+    const targetUrl = chrome.runtime.getURL('sidepanel/sidepanel.html');
+    const existing = tabs.find(t => (t.url || '').includes('sidepanel/sidepanel.html'));
+    if (existing && existing.id) {
+      await chrome.tabs.update(existing.id, { active: true });
+      return existing;
+    } else {
+      return await chrome.tabs.create({
+        url: targetUrl,
+        active: true
+      });
     }
-  } catch (e) {}
-
-  const win = await chrome.windows.create({
-    url: chrome.runtime.getURL('sidepanel/sidepanel.html?mode=window'),
-    type: 'popup',
-    width: width,
-    height: height,
-    left: left,
-    top: top,
-    focused: true
-  });
-
-  appWindowId = win.id;
-  return win;
+  } catch (tabErr) {
+    console.error('[Flow SW] Fallback tab creation error:', tabErr);
+  }
 }
 
 if (chrome.windows && chrome.windows.onRemoved) {
